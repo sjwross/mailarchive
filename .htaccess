@@ -1,0 +1,19 @@
+# .htaccess for mailarchive (Alternative to virtual host)
+# Use this ONLY if you want to access mailarchive at http://localhost/mailarchive/
+# 
+# WARNING: This will proxy ALL /api requests from this directory to Node.
+# If you prefer isolation, use the virtual host approach instead (apache-mailarchive.conf)
+
+RewriteEngine On
+RewriteBase /mailarchive/
+
+# Only proxy /api requests from THIS directory
+RewriteCond %{REQUEST_URI} ^/mailarchive/api
+RewriteRule ^api/(.*)$ http://127.0.0.1:3000/api/$1 [P,L]
+
+# Forward Authorization header
+RequestHeader set Authorization %{HTTP:Authorization}e
+
+# If RequestHeader doesn't work, enable mod_headers and use:
+# SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+# RequestHeader set Authorization %{HTTP_AUTHORIZATION}e env=HTTP_AUTHORIZATION

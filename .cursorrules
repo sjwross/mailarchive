@@ -1,0 +1,3 @@
+# Mailarchive project rules
+
+- **Web UI rebuild:** When you change any file under `web/src/` (React/TS/CSS), run `npm run build -w web` so the built output in `web/dist/` is updated. The app served by Apache (e.g. mailarchive.local) uses `web/dist/`; a browser refresh alone does not pick up source changes until the build is run.

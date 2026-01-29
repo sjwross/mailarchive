@@ -1,0 +1,8 @@
+{
+  "host": "localhost",
+  "port": 5432,
+  "database": "mailarchive",
+  "user": "mailarchive",
+  "password": "mailarchive",
+  "migrations-dir": "migrations"
+}
