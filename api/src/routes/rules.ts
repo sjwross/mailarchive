@@ -67,9 +67,12 @@ export async function rulesRoutes(app: FastifyInstance) {
     if (!userId) return;
     const body = request.body ?? {};
     const name = body.name;
-    const age_threshold_days = body.age_threshold_days;
-    if (!name || typeof name !== "string" || typeof age_threshold_days !== "number") {
-      return reply.status(400).send({ error: "name and age_threshold_days required" });
+    const age_threshold_days =
+      typeof body.age_threshold_days === "string"
+        ? Number(body.age_threshold_days)
+        : body.age_threshold_days;
+    if (!name || typeof name !== "string" || typeof age_threshold_days !== "number" || Number.isNaN(age_threshold_days)) {
+      return reply.status(400).send({ error: "name and age_threshold_days (number) required" });
     }
     const safety_mode = SAFETY_MODES.includes(body.safety_mode as (typeof SAFETY_MODES)[number])
       ? body.safety_mode
@@ -81,17 +84,23 @@ export async function rulesRoutes(app: FastifyInstance) {
     const rawMax = body.max_per_run != null ? Number(body.max_per_run) : MAX_PER_RUN_DEFAULT;
     const max_per_run = Math.min(MAX_PER_RUN_LIMIT, Math.max(1, rawMax || MAX_PER_RUN_DEFAULT));
     const id = nanoid(22);
-    await db.query(
-      "INSERT INTO mailarchive_rules (id, user_id, name, age_threshold_days, folder_ids, safety_mode, schedule, max_per_run) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-      [id, userId, name, age_threshold_days, JSON.stringify(folder_ids), safety_mode, schedule, max_per_run]
-    );
-    const row = (
+    try {
       await db.query(
-        "SELECT id, name, age_threshold_days, folder_ids, safety_mode, schedule, max_per_run, created_at FROM mailarchive_rules WHERE id = $1",
-        [id]
-      )
-    ).rows[0];
-    return reply.status(201).send(row);
+        "INSERT INTO mailarchive_rules (id, user_id, name, age_threshold_days, folder_ids, safety_mode, schedule, max_per_run) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [id, userId, name, age_threshold_days, JSON.stringify(folder_ids), safety_mode, schedule, max_per_run]
+      );
+      const row = (
+        await db.query(
+          "SELECT id, name, age_threshold_days, folder_ids, safety_mode, schedule, max_per_run, created_at FROM mailarchive_rules WHERE id = $1",
+          [id]
+        )
+      ).rows[0];
+      return reply.status(201).send(row);
+    } catch (err: unknown) {
+      const e = err as { message?: string; code?: string };
+      app.log.error(e);
+      return reply.status(500).send({ error: e.message || "Failed to create rule" });
+    }
   });
 
   app.get<{ Params: { id: string } }>("/:id", async (request, reply) => {

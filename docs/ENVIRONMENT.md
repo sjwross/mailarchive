@@ -146,12 +146,14 @@ Used to secure the `/api/jobs/run-scheduled` endpoint when called from a cron jo
 
 #### CRON_SECRET
 
-Shared secret used by cron to authenticate.
+Shared secret used by cron to authenticate. Set in `.env`; the script `scripts/run-scheduled-cron.sh` reads it and sends it in the `X-Cron-Secret` header.
 
 **Example:**
 ```bash
 CRON_SECRET=your-strong-cron-secret
 ```
+
+For full setup (script, crontab, log path), see the **Cron (scheduled archive)** section in [README.md](../README.md).
 
 
 ## Example .env File

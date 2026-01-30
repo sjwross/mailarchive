@@ -88,6 +88,49 @@ Then set in `.env`:
 - `DATABASE_URL=postgres://mailarchive:mailarchive@localhost:5432/mailarchive`
 - `REDIS_URL=redis://localhost:6379`
 
+### Single-command dev (Docker + API + worker + web)
+
+With Docker running and `.env` configured (see above), start everything with:
+
+```bash
+npm run dev
+```
+
+This will:
+
+1. Start Postgres and Redis via `docker compose up -d`
+2. Wait for Postgres to be ready and run migrations
+3. Start the API (port 3000), worker, and web dev server (Vite on port 5173)
+
+Use Ctrl+C to stop API, worker, and web. Postgres and Redis keep running in Docker until you run `docker compose down`.
+
+### Cron (scheduled archive)
+
+To run rules with schedule **daily** or **weekly**, call the API on a schedule:
+
+1. **Add to `.env`:**
+   ```bash
+   CRON_SECRET=your-strong-cron-secret
+   ```
+
+2. **Install the cron script** (run once from repo root):
+   ```bash
+   chmod +x scripts/run-scheduled-cron.sh
+   ```
+
+3. **Add a crontab entry** (runs daily at 3:00 AM; API must be running):
+   ```bash
+   crontab -e
+   ```
+   Add this line (use the real path to your repo):
+   ```
+   0 3 * * * /Volumes/HubSSD/www/mailarchive/scripts/run-scheduled-cron.sh >> /tmp/mailarchive-cron.log 2>&1
+   ```
+
+   To use a different time, change `0 3 * * *` (minute hour day month weekday). Example: `30 2 * * *` = 2:30 AM daily.
+
+4. **Keep the API running** when cron fires (e.g. run `npm run dev:api` in a persistent terminal, or run the API as a service).
+
 ### Phase 1 test
 
 With API and worker running (and Postgres + Redis available):
@@ -108,6 +151,7 @@ Then in another terminal (with worker running): `npm run enqueue-test -w worker`
 - [XAMPP / Apache](docs/XAMPP.md) - Serving the web UI behind Apache and forwarding the Authorization header
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Known issues and fixes so far
 - [Risks: Max per run](docs/RISKS-MAX-PER-RUN.md) - Risks of increasing max messages per archive run (e.g. to 5000)
+- [Local install (Homebrew)](docs/LOCAL-INSTALL.md) - Run Postgres and Redis locally without Docker
 
 **Web UI rebuild:** When serving the app via Apache (e.g. `http://mailarchive.local`), the browser loads files from `web/dist/`. After any change to `web/src/`, run `npm run build -w web` so the built output is updated; then refresh the page to see changes.
 

@@ -7,17 +7,21 @@
     "web"
   ],
   "scripts": {
+    "dev": "./scripts/dev.sh",
+    "dev:local": "npm run db:migrate && npx concurrently --names \"api,worker,web\" \"npm run dev:api\" \"npm run dev:worker\" \"npm run dev:web\"",
     "dev:api": "npm run dev -w api",
     "dev:worker": "npm run dev -w worker",
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w api && npm run build -w worker && npm run build -w web",
-    "db:migrate": "npm run db:migrate -w api",
+    "db:migrate": "dotenv -e .env -- npm run db:migrate -w api",
     "db:migrate:create": "npm run db:migrate:create -w api"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
+    "concurrently": "^9.1.0",
+    "dotenv-cli": "^7.4.2",
     "tsx": "^4.21.0"
   },
   "dependencies": {
