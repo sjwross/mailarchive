@@ -267,6 +267,7 @@ export function RulesSection({ token }: Props) {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Folders</th>
               <th>Age (days)</th>
               <th>Max/run</th>
               <th>Safety</th>
@@ -276,9 +277,18 @@ export function RulesSection({ token }: Props) {
             </tr>
           </thead>
           <tbody>
-            {rules.map((rule) => (
+            {rules.map((rule) => {
+              const folderNames =
+                (rule.folder_ids?.length ?? 0) === 0
+                  ? "Inbox (default)"
+                  : folders
+                      .filter((f) => rule.folder_ids?.includes(f.id))
+                      .map((f) => f.displayName)
+                      .join(", ") || rule.folder_ids?.length + " folder(s)";
+              return (
               <tr key={rule.id}>
                 <td>{rule.name}</td>
+                <td className="rules-folders-cell" title={folderNames}>{folderNames}</td>
                 <td>{rule.age_threshold_days}</td>
                 <td>{rule.max_per_run ?? 50}</td>
                 <td>{rule.safety_mode}</td>
@@ -298,7 +308,8 @@ export function RulesSection({ token }: Props) {
                   </button>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       )}
