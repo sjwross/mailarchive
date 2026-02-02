@@ -40,7 +40,7 @@ export async function microsoftRoutes(app: FastifyInstance) {
       return reply.send({ authUrl, state });
     } catch (err: unknown) {
       const e = err as { message?: string };
-      app.log.error("Microsoft connect error:", e);
+      app.log.error({ err: e }, "Microsoft connect error");
       return reply.status(500).send({ error: e.message || "Failed to generate Microsoft auth URL" });
     }
   });

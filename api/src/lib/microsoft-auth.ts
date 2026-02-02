@@ -82,6 +82,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
     };
 
     const result = await pca.acquireTokenByRefreshToken(tokenRequest);
+    if (!result) return null;
 
     // Extract new refresh token from cache (if rotated)
     let newRefreshToken: string | null = refreshToken; // Keep old one if new not available

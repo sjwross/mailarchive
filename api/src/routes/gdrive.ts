@@ -3,7 +3,16 @@ import { nanoid } from "nanoid";
 import { db } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import { encrypt, decrypt } from "../lib/encryption.js";
-import { getDriveAuthUrl, exchangeCodeForTokens, getDriveForUser, getOAuthClient } from "../lib/google-drive.js";
+import {
+  getDriveAuthUrl,
+  exchangeCodeForTokens,
+  getDriveForUser,
+  getOAuthClient,
+  getArchiveRootFolderId,
+  listArchiveChildren,
+  downloadArchiveFile,
+  parseEmlHeaders,
+} from "../lib/google-drive.js";
 import { google } from "googleapis";
 
 export async function gdriveRoutes(app: FastifyInstance) {
@@ -128,6 +137,80 @@ export async function gdriveRoutes(app: FastifyInstance) {
       connected: true,
       email: conn.config.email || null,
     });
+  });
+
+  // Archive browser: list and download .eml from Drive
+  app.get<{ Querystring: { folderId?: string } }>("/archive/list", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return;
+
+    const conn = await getDriveForUser(userId);
+    if (!conn) {
+      return reply.status(403).send({ error: "Google Drive not connected" });
+    }
+
+    const folderId = request.query.folderId;
+    let targetId: string;
+    if (folderId) {
+      targetId = folderId;
+    } else {
+      try {
+        targetId = await getArchiveRootFolderId(conn.drive, conn.config, userId);
+      } catch (err: unknown) {
+        const e = err as { message?: string };
+        return reply.status(500).send({ error: e.message || "Failed to get archive root" });
+      }
+    }
+
+    try {
+      const result = await listArchiveChildren(conn.drive, targetId);
+      return reply.send(result);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return reply.status(500).send({ error: e.message || "Failed to list archive" });
+    }
+  });
+
+  app.get<{ Params: { fileId: string } }>("/archive/files/:fileId/headers", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return;
+
+    const conn = await getDriveForUser(userId);
+    if (!conn) {
+      return reply.status(403).send({ error: "Google Drive not connected" });
+    }
+
+    const { fileId } = request.params;
+    try {
+      const { data } = await downloadArchiveFile(conn.drive, fileId);
+      const headers = parseEmlHeaders(data);
+      return reply.send(headers);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return reply.status(500).send({ error: e.message || "Failed to read file headers" });
+    }
+  });
+
+  app.get<{ Params: { fileId: string } }>("/archive/files/:fileId", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return;
+
+    const conn = await getDriveForUser(userId);
+    if (!conn) {
+      return reply.status(403).send({ error: "Google Drive not connected" });
+    }
+
+    const { fileId } = request.params;
+    try {
+      const { data, name } = await downloadArchiveFile(conn.drive, fileId);
+      const safeName = (name || "message.eml").replace(/["\\]/g, "_");
+      reply.header("Content-Type", "message/rfc822");
+      reply.header("Content-Disposition", `attachment; filename="${safeName}"`);
+      return reply.send(data);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return reply.status(500).send({ error: e.message || "Failed to download file" });
+    }
   });
 }
 

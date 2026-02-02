@@ -184,3 +184,113 @@ export async function uploadEmlToDrive(params: {
   return res.data.id;
 }
 
+/** Get the user's archive root folder ID (mailarchive/{userId}). Ensures root exists. */
+export async function getArchiveRootFolderId(
+  drive: drive_v3.Drive,
+  config: DriveConfig,
+  userId: string
+): Promise<string> {
+  let rootId = config.rootFolderId;
+  if (!rootId) {
+    rootId = await ensureFolder(drive, BASE_FOLDER_NAME);
+    const updated: DriveConfig = { ...config, rootFolderId: rootId };
+    const encrypted = encrypt(JSON.stringify(updated));
+    await db.query(
+      "UPDATE mailarchive_connections SET config_encrypted = $1 WHERE provider = $2 AND config_encrypted = $3",
+      [encrypted, "gdrive", encrypt(JSON.stringify(config))]
+    );
+  }
+  return ensureFolder(drive, userId, rootId);
+}
+
+export interface ArchiveListEntry {
+  folders: { id: string; name: string }[];
+  files: { id: string; name: string; modifiedTime: string | null }[];
+}
+
+/** List direct children of a folder (subfolders and .eml files). */
+export async function listArchiveChildren(
+  drive: drive_v3.Drive,
+  folderId: string
+): Promise<ArchiveListEntry> {
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: "files(id, name, mimeType, modifiedTime)",
+    orderBy: "name",
+  });
+  const files = res.data.files || [];
+  const folders: { id: string; name: string }[] = [];
+  const emlFiles: { id: string; name: string; modifiedTime: string | null }[] = [];
+  for (const f of files) {
+    if (!f.id || !f.name) continue;
+    if (f.mimeType === "application/vnd.google-apps.folder") {
+      folders.push({ id: f.id, name: f.name });
+    } else if (
+      f.mimeType === "message/rfc822" ||
+      (f.name && f.name.toLowerCase().endsWith(".eml"))
+    ) {
+      emlFiles.push({
+        id: f.id,
+        name: f.name,
+        modifiedTime: f.modifiedTime || null,
+      });
+    }
+  }
+  return { folders, files: emlFiles };
+}
+
+/** Download a file from Drive as a buffer (for streaming in response). */
+export async function downloadArchiveFile(
+  drive: drive_v3.Drive,
+  fileId: string
+): Promise<{ data: Buffer; name?: string }> {
+  const meta = await drive.files.get({
+    fileId,
+    fields: "name",
+  });
+  const res = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" }
+  );
+  const data = Buffer.from(res.data as ArrayBuffer);
+  return { data, name: meta.data.name || undefined };
+}
+
+/** Parse only headers from .eml buffer; returns subject, date, from, hasAttachments for list display. */
+export function parseEmlHeaders(data: Buffer): {
+  subject: string;
+  date: string;
+  from: string;
+  hasAttachments: boolean;
+} {
+  const str = data.toString("utf8", 0, Math.min(data.length, 128 * 1024));
+  const blank = str.indexOf("\n\n");
+  const headersStr = blank >= 0 ? str.slice(0, blank) : str;
+  const lines = headersStr.split(/\r?\n/);
+  const headers: Record<string, string> = {};
+  let currentKey = "";
+  for (const line of lines) {
+    if (/^[ \t]/.test(line) && currentKey) {
+      headers[currentKey] = (headers[currentKey] || "") + " " + line.trim();
+    } else {
+      const colon = line.indexOf(":");
+      if (colon > 0) {
+        currentKey = line.slice(0, colon).trim().toLowerCase();
+        const value = line.slice(colon + 1).trim();
+        if (!headers[currentKey]) headers[currentKey] = value;
+      }
+    }
+  }
+  // Attachment can be: "Content-Disposition: attachment" or "Content-Disposition: inline; filename=..."
+  // Scan full header + body start (attachments appear in MIME part headers after boundaries)
+  const hasAttachments =
+    /content-disposition\s*:\s*attachment/i.test(str) ||
+    /content-disposition\s*:[\s\S]{0,400}?filename\s*=/i.test(str);
+  return {
+    subject: headers["subject"] ?? "",
+    date: headers["date"] ?? "",
+    from: headers["from"] ?? "",
+    hasAttachments,
+  };
+}
+
