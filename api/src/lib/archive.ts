@@ -11,6 +11,7 @@ import {
   deleteMessage,
 } from "./microsoft-graph.js";
 import { getDriveForUser, ensureDrivePath, uploadEmlToDrive } from "./google-drive.js";
+import { getOneDriveForUser, uploadEmlToOneDrive } from "./onedrive.js";
 
 type RuleRow = {
   id: string;
@@ -22,12 +23,16 @@ type RuleRow = {
   schedule: "manual" | "daily" | "weekly";
 };
 
+export type ArchiveStorageUsed = "s3" | "gdrive" | "onedrive";
+
 export type ArchiveRunSummary = {
   ruleId: string;
   processedFolders: string[];
   totalMessagesConsidered: number;
   totalArchived: number;
   totalFailed: number;
+  /** Which storage backend was used (priority: S3 > Google Drive > OneDrive) */
+  storageUsed?: ArchiveStorageUsed;
   /** First error message when totalFailed > 0, so UI can show why without reading logs */
   firstError?: string;
   safetyMode: RuleRow["safety_mode"];
@@ -54,10 +59,27 @@ export async function runArchiveOnce(
 
   const s3Config = await getUserS3Config(userId);
   const drive = await getDriveForUser(userId);
+  const oneDrive = await getOneDriveForUser(userId);
 
-  if (!s3Config && !drive) {
-    throw new Error("No storage configured (S3 or Google Drive)");
+  if (!s3Config && !drive && !oneDrive) {
+    throw new Error("No storage configured (S3, Google Drive, or Microsoft OneDrive)");
   }
+
+  const prefResult = await db.query<{ preferred_archive_storage: string | null }>(
+    "SELECT preferred_archive_storage FROM mailarchive_users WHERE id = $1",
+    [userId]
+  );
+  const preferred = prefResult.rows[0]?.preferred_archive_storage as ArchiveStorageUsed | undefined;
+  const preferredAndConfigured =
+    preferred === "s3" && s3Config
+      ? "s3"
+      : preferred === "gdrive" && drive
+        ? "gdrive"
+        : preferred === "onedrive" && oneDrive
+          ? "onedrive"
+          : null;
+  const storageUsed: ArchiveRunSummary["storageUsed"] =
+    preferredAndConfigured ?? (s3Config ? "s3" : oneDrive ? "onedrive" : "gdrive");
 
   const { client, tokenData } = tokenResult;
 
@@ -88,6 +110,7 @@ export async function runArchiveOnce(
       totalMessagesConsidered: 0,
       totalArchived: 0,
       totalFailed: 0,
+      storageUsed,
       firstError: undefined,
       safetyMode: rule.safety_mode,
     };
@@ -149,7 +172,7 @@ export async function runArchiveOnce(
         const received = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
         const subject = msg.subject || "no-subject";
         const subjectHash = createSubjectHash(subject, msg.id);
-        if (s3Config) {
+        if (storageUsed === "s3" && s3Config) {
           const key = buildObjectKey({
             userId,
             folderName,
@@ -158,7 +181,20 @@ export async function runArchiveOnce(
             basePath: s3Config.basePath,
           });
           await uploadEml(s3Config, key, mime);
-        } else if (drive) {
+        } else if (storageUsed === "onedrive" && oneDrive) {
+          const year = received.getUTCFullYear();
+          const month = String(received.getUTCMonth() + 1).padStart(2, "0");
+          const filename = `${subjectHash}.eml`;
+          await uploadEmlToOneDrive({
+            client: oneDrive.client,
+            userId,
+            folderName,
+            year,
+            month,
+            filename,
+            mimeContent: mime,
+          });
+        } else if (storageUsed === "gdrive" && drive) {
           const year = received.getUTCFullYear();
           const month = String(received.getUTCMonth() + 1).padStart(2, "0");
           const folderId = await ensureDrivePath(
@@ -208,6 +244,7 @@ export async function runArchiveOnce(
     totalMessagesConsidered: totalConsidered,
     totalArchived,
     totalFailed,
+    storageUsed,
     firstError,
     safetyMode: rule.safety_mode,
   };

@@ -9,12 +9,14 @@ import { storageRoutes } from "./routes/storage.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { gdriveRoutes } from "./routes/gdrive.js";
 import { junkDeleteRoutes } from "./routes/junk-delete.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { db } from "./db.js";
 
 const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: true });
 await app.register(authRoutes, { prefix: "/api/auth" });
+await app.register(settingsRoutes, { prefix: "/api/settings" });
 await app.register(connectionsRoutes, { prefix: "/api/connections" });
 await app.register(rulesRoutes, { prefix: "/api/rules" });
 await app.register(microsoftRoutes, { prefix: "/api/microsoft" });

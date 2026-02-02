@@ -133,10 +133,18 @@ export function RulesSection({ token }: Props) {
       if (!res.ok || !data.ok) {
         throw new Error(data.error || "Failed to run archive");
       }
+      const storageLabel =
+        data.summary.storageUsed === "s3"
+          ? "S3"
+          : data.summary.storageUsed === "gdrive"
+            ? "Google Drive"
+            : data.summary.storageUsed === "onedrive"
+              ? "OneDrive"
+              : "storage";
       const msg =
         data.summary.totalFailed > 0 && data.summary.firstError
-          ? `Archive run completed.\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}\n\nFirst error: ${data.summary.firstError}`
-          : `Archive run completed.\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}`;
+          ? `Archive run completed (Storage: ${storageLabel}).\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}\n\nFirst error: ${data.summary.firstError}`
+          : `Archive run completed (Storage: ${storageLabel}).\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}`;
       alert(msg);
       await load();
     } catch (err) {

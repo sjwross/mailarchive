@@ -4,6 +4,7 @@ import { db } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import { encrypt } from "../lib/encryption.js";
 import { getUserS3Config, uploadEml, buildObjectKey } from "../lib/s3.js";
+import { getOneDriveForUser } from "../lib/onedrive.js";
 
 type S3Body = {
   endpoint?: string;
@@ -39,6 +40,19 @@ export async function storageRoutes(app: FastifyInstance) {
     });
   });
 
+  app.delete("/s3", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return reply.status(401).send({ error: "Unauthorized" });
+    const result = await db.query(
+      "DELETE FROM mailarchive_connections WHERE user_id = $1 AND provider = $2 RETURNING id",
+      [userId, "s3"]
+    );
+    if (result.rowCount === 0) {
+      return reply.status(404).send({ error: "S3 storage not configured" });
+    }
+    return reply.send({ ok: true });
+  });
+
   app.post<{ Body: S3Body }>("/s3", async (request, reply) => {
     const userId = (request as { userId?: string }).userId;
     if (!userId) return;
@@ -72,6 +86,16 @@ export async function storageRoutes(app: FastifyInstance) {
       region: config.region,
       basePath: config.basePath,
     });
+  });
+
+  app.get("/onedrive", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return;
+    const oneDrive = await getOneDriveForUser(userId);
+    if (!oneDrive) {
+      return reply.send({ configured: false });
+    }
+    return reply.send({ configured: true, note: "Uses your Microsoft account" });
   });
 
   app.post("/s3/test", async (request, reply) => {

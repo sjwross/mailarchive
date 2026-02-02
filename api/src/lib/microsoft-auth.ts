@@ -20,6 +20,7 @@ const SCOPES = [
   "https://graph.microsoft.com/User.Read",
   "https://graph.microsoft.com/Mail.Read",
   "https://graph.microsoft.com/Mail.ReadWrite",
+  "https://graph.microsoft.com/Files.ReadWrite", // OneDrive archive
   "offline_access", // Required to get refresh token
 ];
 

@@ -141,6 +141,19 @@ export async function microsoftRoutes(app: FastifyInstance) {
     }
   });
 
+  app.delete("/disconnect", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return reply.status(401).send({ error: "Unauthorized" });
+    const result = await db.query(
+      "DELETE FROM mailarchive_connections WHERE user_id = $1 AND provider = $2 RETURNING id",
+      [userId, "microsoft"]
+    );
+    if (result.rowCount === 0) {
+      return reply.status(404).send({ error: "Microsoft account not connected" });
+    }
+    return reply.send({ ok: true });
+  });
+
   app.get("/status", async (request, reply) => {
     const userId = (request as { userId?: string }).userId;
     if (!userId) return;
