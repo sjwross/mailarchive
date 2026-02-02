@@ -8,6 +8,7 @@ import { microsoftRoutes } from "./routes/microsoft.js";
 import { storageRoutes } from "./routes/storage.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { gdriveRoutes } from "./routes/gdrive.js";
+import { junkDeleteRoutes } from "./routes/junk-delete.js";
 import { db } from "./db.js";
 
 const app = Fastify({ logger: true });
@@ -20,6 +21,7 @@ await app.register(microsoftRoutes, { prefix: "/api/microsoft" });
 await app.register(storageRoutes, { prefix: "/api/storage" });
 await app.register(jobsRoutes, { prefix: "/api/jobs" });
 await app.register(gdriveRoutes, { prefix: "/api/gdrive" });
+await app.register(junkDeleteRoutes, { prefix: "/api/junk-delete" });
 
 app.get("/api/health", async () => ({ ok: true }));
 

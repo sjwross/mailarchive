@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { db } from "../db.js";
 import { runArchiveOnce } from "../lib/archive.js";
+import { runJunkDeleteOnce } from "../lib/junk-delete.js";
 
 const WEEKLY_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PER_RUN_DEFAULT = 50;
@@ -74,6 +75,56 @@ export async function jobsRoutes(app: FastifyInstance) {
           schedule: rule.schedule,
           ran: false,
           error: e.message || "Failed to run scheduled archive",
+        });
+      }
+    }
+
+    return reply.send({ ok: true, summaries });
+  });
+
+  app.post("/run-junk-delete", async (request, reply) => {
+    const cronSecret = process.env.CRON_SECRET;
+    const headerSecret = request.headers["x-cron-secret"];
+
+    if (!cronSecret || headerSecret !== cronSecret) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    const rulesResult = await db.query<{
+      id: string;
+      user_id: string;
+      schedule: string;
+      last_run_at: Date | null;
+      enabled: boolean;
+    }>(`
+      SELECT id, user_id, schedule, last_run_at, enabled
+      FROM mailarchive_junk_delete_rules
+      WHERE enabled = true AND schedule != 'manual'
+    `);
+
+    const summaries: { ruleId: string; userId: string; schedule: string; ran: boolean; error?: string }[] = [];
+
+    for (const rule of rulesResult.rows) {
+      if (rule.schedule === "weekly") {
+        const now = Date.now();
+        const last = rule.last_run_at ? rule.last_run_at.getTime() : 0;
+        if (last && now - last < WEEKLY_MS) {
+          summaries.push({ ruleId: rule.id, userId: rule.user_id, schedule: rule.schedule, ran: false });
+          continue;
+        }
+      }
+
+      try {
+        await runJunkDeleteOnce(rule.user_id, rule.id);
+        summaries.push({ ruleId: rule.id, userId: rule.user_id, schedule: rule.schedule, ran: true });
+      } catch (err: unknown) {
+        const e = err as { message?: string };
+        summaries.push({
+          ruleId: rule.id,
+          userId: rule.user_id,
+          schedule: rule.schedule,
+          ran: false,
+          error: e.message || "Failed to run junk delete",
         });
       }
     }

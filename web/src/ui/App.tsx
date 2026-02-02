@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { AuthSection } from "./AuthSection";
 import { StatusSection } from "./StatusSection";
 import { RulesSection } from "./RulesSection";
+import { JunkCleanupSection } from "./JunkCleanupSection";
 
 export function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("ma_token"));
@@ -38,6 +39,8 @@ export function App() {
               <h2>Archive Rules</h2>
               <RulesSection token={token} />
             </section>
+
+            <JunkCleanupSection token={token} onUnauthorized={() => setToken(null)} />
 
             <section className="card">
               <h2>Browse archive</h2>
