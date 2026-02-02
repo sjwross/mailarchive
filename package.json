@@ -14,7 +14,8 @@
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w api && npm run build -w worker && npm run build -w web",
     "db:migrate": "dotenv -e .env -- npm run db:migrate -w api",
-    "db:migrate:create": "npm run db:migrate:create -w api"
+    "db:migrate:create": "npm run db:migrate:create -w api",
+    "test:scheduled": "./scripts/test-scheduled-job.sh"
   },
   "engines": {
     "node": ">=20"

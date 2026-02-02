@@ -113,23 +113,36 @@ To run rules with schedule **daily** or **weekly**, call the API on a schedule:
    CRON_SECRET=your-strong-cron-secret
    ```
 
-2. **Install the cron script** (run once from repo root):
-   ```bash
-   chmod +x scripts/run-scheduled-cron.sh
-   ```
+2. **Choose a cron script:**
+   - **Repo on main disk:** use `scripts/run-scheduled-cron.sh` (reads CRON_SECRET from repo `.env`).
+   - **Repo on external volume (e.g. HubSSD):** macOS cron cannot run scripts on external volumes ("Operation not permitted"). Use the **wrapper** so cron runs a script on your main disk:
+     ```bash
+     mkdir -p ~/bin
+     cp scripts/run-scheduled-cron-wrapper.sh ~/bin/mailarchive-run-scheduled.sh
+     chmod +x ~/bin/mailarchive-run-scheduled.sh
+     echo "CRON_SECRET=$(grep CRON_SECRET .env | sed 's/CRON_SECRET=//')" > ~/.mailarchive-cron.env
+     # optional: echo 'MAILARCHIVE_API_URL=http://localhost:3000' >> ~/.mailarchive-cron.env
+     ```
+     Then in crontab use: `0 3 * * * $HOME/bin/mailarchive-run-scheduled.sh >> /tmp/mailarchive-cron.log 2>&1`
 
 3. **Add a crontab entry** (runs daily at 3:00 AM; API must be running):
    ```bash
    crontab -e
    ```
-   Add this line (use the real path to your repo):
-   ```
-   0 3 * * * /Volumes/HubSSD/www/mailarchive/scripts/run-scheduled-cron.sh >> /tmp/mailarchive-cron.log 2>&1
-   ```
+   - With wrapper (recommended if repo is on external drive):
+     ```
+     0 3 * * * $HOME/bin/mailarchive-run-scheduled.sh >> /tmp/mailarchive-cron.log 2>&1
+     ```
+   - With repo script (only if repo is on main disk):
+     ```
+     0 3 * * * /path/to/mailarchive/scripts/run-scheduled-cron.sh >> /tmp/mailarchive-cron.log 2>&1
+     ```
 
    To use a different time, change `0 3 * * *` (minute hour day month weekday). Example: `30 2 * * *` = 2:30 AM daily.
 
 4. **Keep the API running** when cron fires (e.g. run `npm run dev:api` in a persistent terminal, or run the API as a service).
+
+5. **Note:** Cron does not run when the Mac is asleep. For a machine that sleeps overnight, use a time after you usually wake it, or use `launchd` to run after wake.
 
 ### Phase 1 test
 

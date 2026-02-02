@@ -21,4 +21,5 @@ fi
 API_URL="${MAILARCHIVE_API_URL:-http://localhost:3000}"
 curl -s -X POST "${API_URL}/api/jobs/run-scheduled" \
   -H "X-Cron-Secret: $CRON_SECRET" \
-  -H "Content-Type: application/json"
+  -H "Content-Type: application/json" \
+  -d '{}'
