@@ -228,3 +228,41 @@ If you continue to see `invalid_request` after verifying the above, the next ste
 2. Review tenant **User settings → User consent for applications** to confirm whether normal users are allowed to consent to `Mail.Read` / `Mail.ReadWrite`.
 3. If necessary, have a tenant admin grant admin consent to the app, or test in a separate dev tenant where you have Global admin rights.
 
+---
+
+### 5. Scheduled archive (cron) didn't run
+
+**Symptom**
+
+- You have a rule with **Schedule** set to **Daily** or **Weekly** and **Safety mode** "Archive then move" (or similar), but at the expected time (e.g. 3:00 AM) no archive run happens.
+
+**Checklist**
+
+1. **Rule schedule**
+   - In the UI, confirm the rule's **Schedule** is **Daily** or **Weekly**, not **Manual**. Only non-manual rules are picked up by the scheduled job.
+
+2. **Test the job endpoint (API must be running)**
+   - From the repo root, with the API running (e.g. `npm run dev:api`):
+     ```bash
+     ./scripts/test-scheduled-job.sh
+     ```
+   - Or: `npm run test:scheduled` (if defined in root `package.json`).
+   - You should see a JSON response with `ok: true` and a `summaries` array. If you get **401**, `CRON_SECRET` in `.env` does not match the secret used by the script (or by cron). If you get **connection refused**, the API is not running.
+
+3. **Cron setup**
+   - **Repo on external volume (e.g. HubSSD):** macOS cron often cannot run scripts on external volumes. Use the **wrapper** on your main disk:
+     - Copy `scripts/run-scheduled-cron-wrapper.sh` to e.g. `~/bin/mailarchive-run-scheduled.sh`, make it executable.
+     - Create `~/.mailarchive-cron.env` with `CRON_SECRET=<same value as in project .env>` and optionally `MAILARCHIVE_API_URL=http://localhost:3000`.
+     - In crontab: `0 3 * * * $HOME/bin/mailarchive-run-scheduled.sh >> /tmp/mailarchive-cron.log 2>&1`
+   - **Repo on main disk:** You can use `scripts/run-scheduled-cron.sh` directly in crontab (it reads `CRON_SECRET` from the repo `.env`).
+
+4. **Cron log**
+   - After the cron time, check:
+     ```bash
+     cat /tmp/mailarchive-cron.log
+     ```
+   - Look for "Calling …/api/jobs/run-scheduled" and "HTTP 200". If you see "HTTP 401", the secret in `~/.mailarchive-cron.env` does not match the API's `CRON_SECRET`. If you see "curl failed" or no log, cron may not be running the script (path, permissions) or the API was not reachable.
+
+5. **API must be running when cron fires**
+   - The scheduled job is a **HTTP call** into the API. If the API is not running at 3:00 AM (or whenever cron runs), the request will fail. Options: run the API in a persistent terminal, use a process manager (e.g. `pm2`), or run it as a system service so it is always up when cron runs.
+
