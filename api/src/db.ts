@@ -2,11 +2,20 @@ import pg from "pg";
 
 const { Pool } = pg;
 
-// Parse DATABASE_URL or use individual params
-function getDbConfig() {
+// Parse DATABASE_URL or use individual params.
+// When DATABASE_URL is set and valid, pass it as connectionString so pg honors
+// query params (e.g. ?sslmode=require) used by many hosted Postgres providers.
+function getDbConfig(): pg.PoolConfig {
   const url = process.env.DATABASE_URL;
+  if (url && url.includes("://")) {
+    try {
+      new URL(url);
+      return { connectionString: url, max: 10 };
+    } catch {
+      // fall through to individual params
+    }
+  }
   if (url && !url.includes("://")) {
-    // Already parsed or using individual env vars
     return {
       host: process.env.DB_HOST || "localhost",
       port: Number(process.env.DB_PORT) || 5432,
@@ -16,27 +25,14 @@ function getDbConfig() {
       max: 10,
     };
   }
-  // Try to parse URL, but fallback to individual params if parsing fails
-  try {
-    const parsed = new URL(url || "");
-    return {
-      host: parsed.hostname || "localhost",
-      port: Number(parsed.port) || 5432,
-      database: parsed.pathname.slice(1) || "mailarchive",
-      user: parsed.username || "mailarchive",
-      password: parsed.password || "mailarchive",
-      max: 10,
-    };
-  } catch {
-    return {
-      host: process.env.DB_HOST || "localhost",
-      port: Number(process.env.DB_PORT) || 5432,
-      database: process.env.DB_NAME || "mailarchive",
-      user: process.env.DB_USER || "mailarchive",
-      password: process.env.DB_PASSWORD || "mailarchive",
-      max: 10,
-    };
-  }
+  return {
+    host: process.env.DB_HOST || "localhost",
+    port: Number(process.env.DB_PORT) || 5432,
+    database: process.env.DB_NAME || "mailarchive",
+    user: process.env.DB_USER || "mailarchive",
+    password: process.env.DB_PASSWORD || "mailarchive",
+    max: 10,
+  };
 }
 
 export const db = new Pool(getDbConfig());

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 
 type Props = {
   token: string;
@@ -27,6 +28,7 @@ export function RulesSection({ token }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [newName, setNewName] = useState("Archive old mail");
   const [newAge, setNewAge] = useState(365);
@@ -124,6 +126,8 @@ export function RulesSection({ token }: Props) {
 
   async function runNow(ruleId: string) {
     setError(null);
+    flushSync(() => setRunningRuleId(ruleId));
+    await new Promise((r) => setTimeout(r, 0));
     try {
       const res = await fetch(`/api/rules/${ruleId}/run-now`, {
         method: "POST",
@@ -141,15 +145,23 @@ export function RulesSection({ token }: Props) {
             : data.summary.storageUsed === "onedrive"
               ? "OneDrive"
               : "storage";
-      const msg =
+      let msg =
         data.summary.totalFailed > 0 && data.summary.firstError
           ? `Archive run completed (Storage: ${storageLabel}).\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}\n\nFirst error: ${data.summary.firstError}`
           : `Archive run completed (Storage: ${storageLabel}).\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}`;
+      if (
+        data.summary.firstError?.toLowerCase().includes("insufficient permission") &&
+        data.summary.storageUsed === "gdrive"
+      ) {
+        msg += "\n\nIf using Google Drive, disconnect and reconnect in Connections to refresh permissions.";
+      }
       alert(msg);
       await load();
     } catch (err) {
       const e = err as { message?: string };
       setError(e.message || "Failed to run rule");
+    } finally {
+      setRunningRuleId(null);
     }
   }
 
@@ -303,8 +315,12 @@ export function RulesSection({ token }: Props) {
                 <td>{rule.schedule}</td>
                 <td>{rule.last_run_at ? new Date(rule.last_run_at).toLocaleString() : "Never"}</td>
                 <td className="rules-actions">
-                  <button type="button" onClick={() => runNow(rule.id)}>
-                    Run now
+                  <button
+                    type="button"
+                    onClick={() => runNow(rule.id)}
+                    disabled={runningRuleId === rule.id}
+                  >
+                    {runningRuleId === rule.id ? "Running…" : "Run now"}
                   </button>
                   <button
                     type="button"
