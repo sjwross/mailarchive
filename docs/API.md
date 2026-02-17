@@ -178,7 +178,7 @@ Rules define what emails to archive and when.
 - `name` (required) - Rule name
 - `age_threshold_days` (required) - Archive emails older than N days
 - `folder_ids` (optional) - Array of folder IDs to process (default: `[]`)
-- `safety_mode` (optional) - `archive_only` | `archive_move` | `archive_delete` (default: `archive_only`)
+- `safety_mode` (optional) - `archive_only` | `archive_move` | `archive_delete` (default: `archive_only`). `archive_move` moves messages to the Outlook Archive folder after archiving; `archive_delete` moves them to Deleted Items (not permanent delete).
 - `schedule` (optional) - `manual` | `daily` | `weekly` (default: `manual`)
 
 **Response:** Rule object (same as list).

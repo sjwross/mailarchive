@@ -5,10 +5,10 @@ import {
   listMessages,
   getMessageMime,
   listFolders,
+  getWellKnownFolder,
   MicrosoftFolder,
   MicrosoftMessage,
   moveMessage,
-  deleteMessage,
 } from "./microsoft-graph.js";
 import { getDriveForUser, ensureDrivePath, uploadEmlToDrive } from "./google-drive.js";
 import { getOneDriveForUser, uploadEmlToOneDrive } from "./onedrive.js";
@@ -91,6 +91,12 @@ export async function runArchiveOnce(
     folders.find((f) => f.displayName.toLowerCase() === "archive") ||
     folders.find((f) => f.displayName.toLowerCase().includes("archive"));
   const archiveFolderId = archiveFolder?.id;
+
+  let deletedFolderId: string | undefined;
+  if (rule.safety_mode === "archive_delete") {
+    const deleted = await getWellKnownFolder(client, tokenData.accountId, "deleteditems");
+    deletedFolderId = deleted.id;
+  }
 
   const cutoff = new Date(Date.now() - rule.age_threshold_days * 24 * 60 * 60 * 1000);
 
@@ -222,7 +228,12 @@ export async function runArchiveOnce(
             await moveMessage(client, tokenData.accountId, msg.id, archiveFolderId);
           }
         } else if (rule.safety_mode === "archive_delete") {
-          await deleteMessage(client, tokenData.accountId, msg.id);
+          if (!deletedFolderId) {
+            // eslint-disable-next-line no-console
+            console.warn("[archive] No Deleted Items folder found; skipping move for message", msg.id);
+          } else {
+            await moveMessage(client, tokenData.accountId, msg.id, deletedFolderId);
+          }
         }
 
         totalArchived += 1;

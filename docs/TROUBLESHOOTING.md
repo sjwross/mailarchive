@@ -1,6 +1,18 @@
 ## Troubleshooting Guide
 
-This document summarizes the main issues we have hit so far and how to resolve them.
+This document summarizes the main issues we have hit so far and how to resolve them. A longer **bug/fix history** (for maintainer records) is in [docs/BUG-FIX-HISTORY.md](BUG-FIX-HISTORY.md).
+
+---
+
+### 0. Redeploy locally (pick up code changes)
+
+Restart the API so it loads the latest code:
+
+```bash
+npm run dev -w api
+```
+
+(or `npm run dev:api` from repo root). Stop any running API (Ctrl+C) first.
 
 ---
 
@@ -265,4 +277,10 @@ If you continue to see `invalid_request` after verifying the above, the next ste
 
 5. **API must be running when cron fires**
    - The scheduled job is a **HTTP call** into the API. If the API is not running at 3:00 AM (or whenever cron runs), the request will fail. Options: run the API in a persistent terminal, use a process manager (e.g. `pm2`), or run it as a system service so it is always up when cron runs.
+
+---
+
+### 6. Archive + delete: where do emails go?
+
+**Safety mode “Archive + delete”** archives each message to your storage (S3 / Google Drive / OneDrive), then **moves** the message to your mailbox’s **Deleted Items** folder (not a permanent delete). You can empty Deleted Items when you want to remove them for good.
 

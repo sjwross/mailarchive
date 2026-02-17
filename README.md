@@ -163,6 +163,7 @@ Then in another terminal (with worker running): `npm run enqueue-test -w worker`
 - [Architecture](docs/ARCHITECTURE.md) - System design overview
 - [XAMPP / Apache](docs/XAMPP.md) - Serving the web UI behind Apache and forwarding the Authorization header
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Known issues and fixes so far
+- [Bug/fix history](docs/BUG-FIX-HISTORY.md) - Maintainer log of past bugs and fixes (for records)
 - [Risks: Max per run](docs/RISKS-MAX-PER-RUN.md) - Risks of increasing max messages per archive run (e.g. to 5000)
 - [Local install (Homebrew)](docs/LOCAL-INSTALL.md) - Run Postgres and Redis locally without Docker
 
