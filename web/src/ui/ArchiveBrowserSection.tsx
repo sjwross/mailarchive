@@ -178,6 +178,10 @@ export function ArchiveBrowserSection({ token, onUnauthorized }: Props) {
   const [viewLoading, setViewLoading] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
   const [fileHeaders, setFileHeaders] = useState<Record<string, { subject: string; date: string; from: string; hasAttachments?: boolean }>>({});
+  type SortKey = "from" | "subject" | "date";
+  const [sort, setSort] = useState<{ by: SortKey | null; dir: "asc" | "desc" }>({ by: null, dir: "asc" });
+  const sortBy = sort.by;
+  const sortDir = sort.dir;
 
   const checkUnauthorized = useCallback(
     (res: Response): boolean => {
@@ -340,6 +344,43 @@ export function ArchiveBrowserSection({ token, onUnauthorized }: Props) {
     setViewError(null);
   };
 
+  const handleSort = (key: SortKey) => {
+    setSort((prev) => {
+      if (prev.by === key) {
+        return { by: key, dir: prev.dir === "asc" ? "desc" : "asc" };
+      }
+      return { by: key, dir: "asc" };
+    });
+  };
+
+  // Sorted file list for table (only when we have files and optional sort)
+  const sortedFiles =
+    list?.files && list.files.length > 0
+      ? (() => {
+          if (!sortBy) return list.files;
+          const getCompare = (f: (typeof list.files)[0]) => {
+            const h = fileHeaders[f.id];
+            if (sortBy === "from") return (h?.from?.trim() ?? "").toLowerCase();
+            if (sortBy === "subject") return (h?.subject?.trim() ?? f.name ?? "").toLowerCase();
+            if (sortBy === "date") {
+              const dateStr = h?.date ?? f.modifiedTime ?? "";
+              const d = dateStr ? new Date(dateStr) : null;
+              return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+            }
+            return "";
+          };
+          return [...list.files].sort((a, b) => {
+            const va = getCompare(a);
+            const vb = getCompare(b);
+            if (sortBy === "date") {
+              return sortDir === "asc" ? (va as number) - (vb as number) : (vb as number) - (va as number);
+            }
+            const cmp = String(va).localeCompare(String(vb), undefined, { sensitivity: "base" });
+            return sortDir === "asc" ? cmp : -cmp;
+          });
+        })()
+      : [];
+
   const downloadAttachment = (att: ParsedAttachment) => {
     try {
       const binary = atob(att.contentBase64);
@@ -432,15 +473,42 @@ export function ArchiveBrowserSection({ token, onUnauthorized }: Props) {
             <table className="archive-mail-table">
               <thead>
                 <tr>
-                  <th className="archive-mail-th-from">From</th>
-                  <th className="archive-mail-th-subject">Subject</th>
+                  <th className="archive-mail-th-from">
+                    <button
+                      type="button"
+                      className="archive-sort-header"
+                      onClick={() => handleSort("from")}
+                      aria-sort={sortBy === "from" ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+                    >
+                      From {sortBy === "from" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                  </th>
+                  <th className="archive-mail-th-subject">
+                    <button
+                      type="button"
+                      className="archive-sort-header"
+                      onClick={() => handleSort("subject")}
+                      aria-sort={sortBy === "subject" ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+                    >
+                      Subject {sortBy === "subject" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                  </th>
                   <th className="archive-mail-th-attach" title="Attachments"></th>
-                  <th className="archive-mail-th-date">Date</th>
+                  <th className="archive-mail-th-date">
+                    <button
+                      type="button"
+                      className="archive-sort-header"
+                      onClick={() => handleSort("date")}
+                      aria-sort={sortBy === "date" ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
+                    >
+                      Date {sortBy === "date" ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                  </th>
                   <th className="archive-mail-th-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {list.files.map((f) => {
+                {sortedFiles.map((f) => {
                   const h = fileHeaders[f.id];
                   const displayFrom = h?.from?.trim() || "—";
                   const displaySubject = h?.subject?.trim() || f.name;

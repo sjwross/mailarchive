@@ -354,6 +354,32 @@ button:disabled {
   background: #0f172a;
 }
 
+.archive-mail-th-from .archive-sort-header,
+.archive-mail-th-subject .archive-sort-header,
+.archive-mail-th-date .archive-sort-header {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.archive-sort-header:hover {
+  color: #e5e7eb;
+  text-decoration: underline;
+}
+.archive-sort-header:focus {
+  outline: 1px solid #60a5fa;
+  outline-offset: 2px;
+}
+
 .archive-mail-th-from {
   width: 20%;
   max-width: 180px;
