@@ -119,9 +119,9 @@ Use this checklist when you see `{"error":"OAuth error: invalid_request"}`. The 
 | Setting        | App value |
 |----------------|-----------|
 | Redirect URI   | `http://localhost:3000/api/microsoft/callback` |
-| Client ID      | `4c24c661-e708-4e8b-94da-205b48d82494` |
-| Tenant ID      | `cc7312ca-599d-4e5f-b455-863356f48151` |
-| Authority URL  | `https://login.microsoftonline.com/cc7312ca-599d-4e5f-b455-863356f48151` |
+| Client ID      | `00000000-0000-0000-0000-000000000001` (replace with yours from Azure) |
+| Tenant ID      | `00000000-0000-0000-0000-000000000002` (replace with yours, or use `common`) |
+| Authority URL  | `https://login.microsoftonline.com/<your-tenant-id-or-common>` |
 | Scopes (Graph) | `User.Read`, `Mail.Read`, `Mail.ReadWrite`, `offline_access` |
 
 ### 1. App registration and IDs
@@ -129,12 +129,8 @@ Use this checklist when you see `{"error":"OAuth error: invalid_request"}`. The 
 1. Go to [Azure Portal](https://portal.azure.com) → **Microsoft Entra ID** (or **Azure Active Directory**) → **App registrations**.
 2. Open the app named **mailarchive** (or the one you use).
 3. On **Overview**:
-   - **Application (client) ID** must be exactly:  
-     `4c24c661-e708-4e8b-94da-205b48d82494`  
-     (Same as `MICROSOFT_CLIENT_ID` in `.env`.)
-   - **Directory (tenant) ID** must be exactly:  
-     `cc7312ca-599d-4e5f-b455-863356f48151`  
-     (Same as `MICROSOFT_TENANT_ID` in `.env`. If you use `common` in `.env`, tenant here can differ; the app will use `common` in the authority.)
+   - **Application (client) ID** must match `MICROSOFT_CLIENT_ID` in `.env` exactly.
+   - **Directory (tenant) ID** must match `MICROSOFT_TENANT_ID` in `.env` (unless you use `common` in `.env`, in which case the authority uses the `common` endpoint).
 
 ### 2. Authentication → Redirect URI (most common cause of invalid_request)
 

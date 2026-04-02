@@ -136,8 +136,8 @@ The `{Outlook-folder-name}` is taken from the source folder’s display name (e.
 
 - **Symptom:** Archive run completes with **Archived: 0, Failed: N**. API logs show:
   ```text
-  Google Drive API has not been used in project 955509933373 before or it is disabled.
-  Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=955509933373
+  Google Drive API has not been used in project YOUR_GCP_PROJECT_NUMBER before or it is disabled.
+  Enable it by visiting the link in the error (Google Cloud Console → your project → enable Drive API).
   ```
 - **Cause:** The Google Cloud project that owns your OAuth client ID has the **Drive API** disabled or never enabled.
 - **Fix:**
@@ -216,9 +216,9 @@ Microsoft integration is implemented but, in some tenant configurations, the OAu
    - If you restrict it (e.g. to *single‑tenant only*), make sure you sign in with an account from that same tenant and that `MICROSLAVE_TENANT_ID` in `.env` matches the tenant ID.
 
 4. **Tenant ID vs `common`**
-   - In `.env` you currently have:
+   - In `.env`, set `MICROSOFT_TENANT_ID` to your directory (tenant) ID from Azure, for example:
      ```bash
-     MICROSOFT_TENANT_ID=cc7312ca-599d-4e5f-b455-863356f48151
+     MICROSOFT_TENANT_ID=00000000-0000-0000-0000-000000000002
      ```
    - You can also set:
      ```bash
