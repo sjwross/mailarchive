@@ -29,7 +29,9 @@ if [ -z "$CRON_SECRET" ]; then
 fi
 API_URL="${MAILARCHIVE_API_URL:-http://localhost:3000}"
 echo "$(date '+%Y-%m-%d %H:%M:%S') Calling $API_URL/api/jobs/run-scheduled"
-curl -s -m 30 -X POST "${API_URL}/api/jobs/run-scheduled" \
+# Scheduled archive can take longer than 30s; give curl enough time so
+# cron logs don't misleadingly show HTTP 000 timeouts.
+curl -sS --connect-timeout 10 -m 600 -X POST "${API_URL}/api/jobs/run-scheduled" \
   -H "X-Cron-Secret: $CRON_SECRET" \
   -H "Content-Type: application/json" \
   -d '{}' \

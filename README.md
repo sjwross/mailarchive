@@ -1,201 +1,66 @@
-# Mail Archive (CloudMail Archive)
+# Mail Archive
 
-Safely archive Outlook.com mail to your own S3-compatible storage and reclaim mailbox space. See [mailarchive_PRD.MD](mailarchive_PRD.MD) for product requirements.
+Archive Outlook.com mail to your own storage (S3-compatible buckets, Google Drive, or OneDrive) and manage archive rules from a web UI.
 
-## Phase 1 — Foundation
+## Requirements
 
-- **API**: Auth (register/login with JWT), CRUD for connections (placeholder) and rules. No UI.
-- **Worker**: Single job type `run-archive`; stub that only logs. Uses BullMQ + Redis.
+- **Node.js** 20+
+- **PostgreSQL** (local or hosted; connection string in `.env`)
+- **Redis** (for the optional background worker / BullMQ)
 
-### Prerequisites
-
-- Node.js 20+
-- PostgreSQL
-- Redis
-
-### Setup
-
-1. **Install dependencies**
-
-   ```bash
-   npm install
-   ```
-
-2. **Environment**
-
-   Copy `.env.example` to `.env` and set:
-
-   - `DATABASE_URL` — PostgreSQL connection string (e.g. `postgres://user:pass@localhost:5432/mailarchive`)
-   - `JWT_SECRET` — Secret for signing auth tokens (use a strong value in production)
-   - `REDIS_URL` — Redis URL for the worker (e.g. `redis://localhost:6379`)
-
-3. **Database**
-
-   From repo root:
-
-   ```bash
-   npm run db:migrate
-   ```
-
-   This runs migrations in `api/migrations/` (must be run from workspace so `api` is current dir for the migrate script; if you `cd api` you can run `npm run db:migrate` there).
-
-4. **Run the API**
-
-   ```bash
-   npm run dev:api
-   ```
-
-   API listens on port 3000 (or `PORT`). Endpoints:
-
-   - `POST /api/auth/register` — body: `{ "email", "password" }`
-   - `POST /api/auth/login` — body: `{ "email", "password" }`
-   - `GET/POST /api/connections` — require `Authorization: Bearer <token>`
-   - `GET/POST/PATCH/DELETE /api/rules` — require `Authorization: Bearer <token>`
-   - `GET /api/health` — health check
-
-5. **Run the worker**
-
-   In another terminal:
-
-   ```bash
-   npm run dev:worker
-   ```
-
-   To enqueue a test job (worker must be running):
-
-   ```bash
-   npm run enqueue-test -w worker
-   ```
-
-### Project layout
-
-- `api/` — Fastify API, auth, connections & rules CRUD, migrations
-- `worker/` — BullMQ worker, `run-archive` job (stub)
-- `mailarchive_PRD.MD` — Product requirements
-
-### Database table prefix
-
-All tables use the `mailarchive_` prefix so the app can share a database with other applications: `mailarchive_users`, `mailarchive_connections`, `mailarchive_rules`.
-
-### Docker (optional, for local Postgres + Redis)
+## Quick start
 
 ```bash
-docker compose up -d
+npm install
+cp .env.example .env
+# Edit .env: set DATABASE_URL, JWT_SECRET, REDIS_URL
+npm run db:migrate
+npm run dev:api
 ```
 
-Then set in `.env`:
-
-- `DATABASE_URL=postgres://mailarchive:mailarchive@localhost:5432/mailarchive`
-- `REDIS_URL=redis://localhost:6379`
-
-### Single-command dev (Docker + API + worker + web)
-
-With Docker running and `.env` configured (see above), start everything with:
+Check the API:
 
 ```bash
-npm run dev
+curl -s http://127.0.0.1:3000/api/health
 ```
 
-This will:
+Expect: `{"ok":true}`
 
-1. Start Postgres and Redis via `docker compose up -d`
-2. Wait for Postgres to be ready and run migrations
-3. Start the API (port 3000), worker, and web dev server (Vite on port 5173)
-
-Use Ctrl+C to stop API, worker, and web. Postgres and Redis keep running in Docker until you run `docker compose down`.
-
-### Cron (scheduled archive)
-
-To run rules with schedule **daily** or **weekly**, call the API on a schedule:
-
-1. **Add to `.env`:**
-   ```bash
-   CRON_SECRET=your-strong-cron-secret
-   ```
-
-2. **Choose a cron script:**
-   - **Repo on main disk:** use `scripts/run-scheduled-cron.sh` (reads CRON_SECRET from repo `.env`).
-   - **Repo on external volume (e.g. HubSSD):** macOS cron cannot run scripts on external volumes ("Operation not permitted"). Use the **wrapper** so cron runs a script on your main disk:
-     ```bash
-     mkdir -p ~/bin
-     cp scripts/run-scheduled-cron-wrapper.sh ~/bin/mailarchive-run-scheduled.sh
-     chmod +x ~/bin/mailarchive-run-scheduled.sh
-     echo "CRON_SECRET=$(grep CRON_SECRET .env | sed 's/CRON_SECRET=//')" > ~/.mailarchive-cron.env
-     # optional: echo 'MAILARCHIVE_API_URL=http://localhost:3000' >> ~/.mailarchive-cron.env
-     ```
-     Then in crontab use: `0 3 * * * $HOME/bin/mailarchive-run-scheduled.sh >> /tmp/mailarchive-cron.log 2>&1`
-
-3. **Add a crontab entry** (runs daily at 3:00 AM; API must be running):
-   ```bash
-   crontab -e
-   ```
-   - With wrapper (recommended if repo is on external drive):
-     ```
-     0 3 * * * $HOME/bin/mailarchive-run-scheduled.sh >> /tmp/mailarchive-cron.log 2>&1
-     ```
-   - With repo script (only if repo is on main disk):
-     ```
-     0 3 * * * /path/to/mailarchive/scripts/run-scheduled-cron.sh >> /tmp/mailarchive-cron.log 2>&1
-     ```
-
-   To use a different time, change `0 3 * * *` (minute hour day month weekday). Example: `30 2 * * *` = 2:30 AM daily.
-
-4. **Keep the API running** when cron fires (e.g. run `npm run dev:api` in a persistent terminal, or run the API as a service).
-
-5. **Note:** Cron does not run when the Mac is asleep. For a machine that sleeps overnight, use a time after you usually wake it, or use `launchd` to run after wake.
-
-### Phase 1 test
-
-With API and worker running (and Postgres + Redis available):
+Optional:
 
 ```bash
-chmod +x scripts/test-phase1.sh
-./scripts/test-phase1.sh
+npm run dev:worker   # background archive worker (needs Redis)
+npm run dev:web      # Vite dev UI (default http://localhost:5173)
 ```
 
-Then in another terminal (with worker running): `npm run enqueue-test -w worker` to enqueue one stub job.
+Build the production web bundle:
 
-### Documentation
+```bash
+npm run build -w web
+```
 
-- [API Documentation](docs/API.md) - Endpoint reference
-- [Database Schema](docs/DATABASE.md) - Table structure and migrations
-- [Environment Variables](docs/ENVIRONMENT.md) - Configuration guide
-- [Architecture](docs/ARCHITECTURE.md) - System design overview
-- [XAMPP / Apache](docs/XAMPP.md) - Serving the web UI behind Apache and forwarding the Authorization header
-- [Troubleshooting](docs/TROUBLESHOOTING.md) - Known issues and fixes so far
-- [Bug/fix history](docs/BUG-FIX-HISTORY.md) - Maintainer log of past bugs and fixes (for records)
-- [Risks: Max per run](docs/RISKS-MAX-PER-RUN.md) - Risks of increasing max messages per archive run (e.g. to 5000)
-- [Local install (Homebrew)](docs/LOCAL-INSTALL.md) - Run Postgres and Redis locally without Docker
+Output is in `web/dist/`.
 
-**Web UI rebuild:** When serving the app via Apache (e.g. `http://mailarchive.local`), the browser loads files from `web/dist/`. After any change to `web/src/`, run `npm run build -w web` so the built output is updated; then refresh the page to see changes.
+## Documentation
 
-### Phase 2 — Microsoft OAuth + Graph
+| Doc | Description |
+|-----|-------------|
+| [docs/API.md](docs/API.md) | HTTP API reference |
+| [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) | Environment variables |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System overview |
+| [docs/DATABASE.md](docs/DATABASE.md) | Schema and migrations |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common failures and fixes |
 
-- **Microsoft OAuth**: Connect Outlook.com accounts via Azure AD
-- **Graph API**: List folders, get messages (MIME format)
-- **Token Management**: Store encrypted tokens, automatic refresh
+For **PostgreSQL via Homebrew** (no Docker), see [docs/LOCAL-INSTALL.md](docs/LOCAL-INSTALL.md).
 
-**Setup:**
-1. Create Azure AD app registration (see [Microsoft Setup Guide](docs/MICROSOFT_SETUP.md))
-2. Add Microsoft OAuth env vars to `.env`:
-   - `MICROSOFT_CLIENT_ID`
-   - `MICROSOFT_CLIENT_SECRET`
-   - `MICROSOFT_TENANT_ID` (or use `common`)
-   - `MICROSOFT_REDIRECT_URI`
-   - `ENCRYPTION_KEY`
-3. Install dependencies: `npm install`
-4. Use endpoints:
-   - `GET /api/microsoft/connect` - Start OAuth flow
-   - `GET /api/microsoft/callback` - OAuth callback
-   - `GET /api/microsoft/folders` - List mail folders
-   - `GET /api/microsoft/status` - Check connection status
+For **Apache / reverse proxy** (e.g. serving `web/dist` behind a vhost), see [docs/XAMPP.md](docs/XAMPP.md).
 
-### Next phases
+Optional **Docker** Postgres/Redis for local dev: `docker compose up -d` in the repo root (see `docker-compose.yml`).
 
-- Phase 3: S3 connection and upload
-- Phase 4: Archive engine and safety modes
-- Phase 5: Scheduling and UI
+## Private developer notes
 
-### Next feature (planned)
+If you maintain machine-specific setup (paths, recovery steps, local Apache), copy `DEV-LOCAL.example.md` to `DEV-LOCAL.md` in the repo root. That file is **gitignored** and will not be pushed.
 
-- **Archive email browser (Google Drive)** — Browse archived emails on Google Drive by folder (e.g. Inbox → year → month) and download `.eml` files. See [docs/NEXT-FEATURE-ARCHIVE-BROWSER.md](docs/NEXT-FEATURE-ARCHIVE-BROWSER.md) for the plan.
+## Product context
+
+High-level requirements and roadmap: [mailarchive_PRD.MD](mailarchive_PRD.MD).

@@ -2,6 +2,8 @@
 
 Use this when you run Postgres and Redis locally instead of Docker.
 
+If Postgres will not start, `brew services` fails, or you see a stale `postmaster.pid`, see **[TROUBLESHOOTING.md §7–8](TROUBLESHOOTING.md)** (connection refused and pid file recovery).
+
 ## Prerequisites
 
 - macOS with [Homebrew](https://brew.sh)

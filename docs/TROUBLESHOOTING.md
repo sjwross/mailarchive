@@ -284,3 +284,78 @@ If you continue to see `invalid_request` after verifying the above, the next ste
 
 **Safety mode “Archive + delete”** archives each message to your storage (S3 / Google Drive / OneDrive), then **moves** the message to your mailbox’s **Deleted Items** folder (not a permanent delete). You can empty Deleted Items when you want to remove them for good.
 
+---
+
+### 7. API fails at startup with `ECONNREFUSED` on port `5432`
+
+**Symptom**
+
+```text
+connect ECONNREFUSED 127.0.0.1:5432
+```
+
+(or similar from `pg` / the API log)
+
+**Cause**  
+PostgreSQL is not running, or it is not listening on the host/port in `DATABASE_URL`.
+
+**Fix**
+
+1. Start PostgreSQL using your install method (package manager, Postgres.app, Docker, hosted provider, etc.).
+2. Confirm something is listening:
+
+   ```bash
+   # macOS/Linux
+   nc -z 127.0.0.1 5432 && echo ok || echo "nothing on 5432"
+   ```
+
+3. Ensure `DATABASE_URL` in `.env` matches that host, port, database name, user, and password.
+
+4. Run migrations if the DB is new:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+---
+
+### 8. PostgreSQL will not start — stale or invalid `postmaster.pid`
+
+**Symptom**
+
+- `pg_ctl start` reports another server might be running, or start fails.
+- `pg_isready` / `nc` show **nothing listening on 5432**.
+
+**Cause**  
+The file `postmaster.pid` in PostgreSQL’s data directory is left over from an unclean shutdown, or points at a PID that is **not** the real `postgres` process.
+
+**Fix (only when nothing is listening on 5432)**
+
+1. Verify no server is bound to the port (example for default 5432):
+
+   ```bash
+   lsof -nP -iTCP:5432 -sTCP:LISTEN
+   ```
+
+   If this prints nothing, no Postgres is listening.
+
+2. Check the PID recorded in `postmaster.pid` (path varies by install; Homebrew often uses a path like `.../var/postgresql@16/postmaster.pid`):
+
+   ```bash
+   head -1 /path/to/data/postmaster.pid
+   ps -p <that-pid>
+   ```
+
+   If the process is **not** `postgres`, the file is invalid.
+
+3. **Remove only the stale pid file** (do not delete other data files), then start the server with your usual command, e.g.:
+
+   ```bash
+   rm /path/to/data/postmaster.pid
+   pg_ctl -D /path/to/data -l /path/to/data/server.log start
+   ```
+
+4. If start still fails, read the server log (often `server.log` next to the data directory or system logs).
+
+**Note:** `brew services start postgresql` can fail with `launchctl` errors on some macOS setups; starting with `pg_ctl` directly may still work. See [LOCAL-INSTALL.md](LOCAL-INSTALL.md) for Homebrew-oriented steps.
+

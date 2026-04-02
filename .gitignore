@@ -4,3 +4,6 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# Private machine-specific developer notes (not for public clones)
+DEV-LOCAL.md

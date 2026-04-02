@@ -17,19 +17,33 @@ export function AuthSection({ token, onTokenChange }: Props) {
     setLoading(true);
     setError(null);
     try {
+      const normalizedEmail = email.trim();
       const res = await fetch(`/api/auth/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
-      const data = await res.json();
+      let data: { token?: string; error?: string } | null = null;
+      try {
+        data = (await res.json()) as { token?: string; error?: string };
+      } catch {
+        throw new Error(`Authentication service returned an invalid response (${res.status}).`);
+      }
       if (!res.ok || !data.token) {
         throw new Error(data.error || "Authentication failed");
       }
       onTokenChange(data.token);
     } catch (err) {
-      const e = err as { message?: string };
-      setError(e.message || "Request failed");
+      const e = err as { message?: string; name?: string };
+      const message = e.message || "Request failed";
+      if (
+        message.includes("Failed to fetch") ||
+        message.includes("did not match the expected pattern")
+      ) {
+        setError("Unable to reach mailarchive API. Start the API server (port 3000) and try again.");
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
