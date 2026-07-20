@@ -256,12 +256,17 @@ X-Cron-Secret: <CRON_SECRET>
 ```json
 {
   "ok": true,
+  "totalArchived": 12,
+  "totalFailed": 0,
   "summaries": [
     {
       "ruleId": "rule_id",
       "userId": "user_id",
       "schedule": "daily",
-      "ran": true
+      "ran": true,
+      "totalArchived": 12,
+      "totalFailed": 0,
+      "totalMessagesConsidered": 15
     },
     {
       "ruleId": "other_rule",

@@ -150,6 +150,27 @@ export function RulesSection({ token }: Props) {
           ? `Archive run completed (Storage: ${storageLabel}).\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}\n\nFirst error: ${data.summary.firstError}`
           : `Archive run completed (Storage: ${storageLabel}).\nArchived: ${data.summary.totalArchived}\nFailed: ${data.summary.totalFailed}`;
       if (
+        data.summary.totalFailed > 0 &&
+        data.summary.firstError &&
+        /expected pattern|did not match/i.test(data.summary.firstError) &&
+        data.summary.totalArchived > 0
+      ) {
+        msg +=
+          "\n\nSome messages may have failed due to a Microsoft API filter quirk. Re-run to continue; already-archived messages are skipped.";
+      }
+      if (data.summary.staleFolderIds?.length) {
+        msg +=
+          "\n\nNote: Saved folder(s) were outdated (often after reconnecting Microsoft). The rule was updated to use current folder(s).";
+      }
+      if (
+        data.summary.totalArchived === 0 &&
+        data.summary.totalFailed === 0 &&
+        data.summary.totalMessagesConsidered === 0 &&
+        !data.summary.staleFolderIds?.length
+      ) {
+        msg += "\n\nNo messages in the selected folder(s) are older than the rule's age threshold.";
+      }
+      if (
         data.summary.firstError?.toLowerCase().includes("insufficient permission") &&
         data.summary.storageUsed === "gdrive"
       ) {
@@ -159,7 +180,17 @@ export function RulesSection({ token }: Props) {
       await load();
     } catch (err) {
       const e = err as { message?: string };
-      setError(e.message || "Failed to run rule");
+      const message = e.message || "Failed to run rule";
+      if (
+        message.includes("did not match the expected pattern") ||
+        message.includes("Unexpected end of JSON")
+      ) {
+        setError(
+          "Archive may still be running or have finished, but the browser did not get a valid response (often a timeout on large runs). Check Google Drive or try a smaller max per run."
+        );
+      } else {
+        setError(message);
+      }
     } finally {
       setRunningRuleId(null);
     }

@@ -35,8 +35,32 @@ export type ArchiveRunSummary = {
   storageUsed?: ArchiveStorageUsed;
   /** First error message when totalFailed > 0, so UI can show why without reading logs */
   firstError?: string;
+  /** Saved folder IDs that no longer exist (e.g. after Microsoft reconnect) */
+  staleFolderIds?: string[];
   safetyMode: RuleRow["safety_mode"];
 };
+
+function resolveFolderIds(
+  requestedIds: string[],
+  folders: MicrosoftFolder[]
+): { folderIds: string[]; staleFolderIds: string[] } {
+  const folderMap = new Map(folders.map((f) => [f.id, f]));
+  const valid = requestedIds.filter((id) => folderMap.has(id));
+  const stale = requestedIds.filter((id) => !folderMap.has(id));
+
+  if (valid.length > 0) {
+    return { folderIds: valid, staleFolderIds: stale };
+  }
+
+  if (requestedIds.length === 0) {
+    const inbox = folders.find((f) => f.displayName.toLowerCase() === "inbox");
+    return { folderIds: inbox ? [inbox.id] : [], staleFolderIds: [] };
+  }
+
+  // All saved folder IDs are stale (common after Microsoft reconnect)
+  const inbox = folders.find((f) => f.displayName.toLowerCase() === "inbox");
+  return { folderIds: inbox ? [inbox.id] : [], staleFolderIds: stale };
+}
 
 export async function runArchiveOnce(
   userId: string,
@@ -100,14 +124,10 @@ export async function runArchiveOnce(
 
   const cutoff = new Date(Date.now() - rule.age_threshold_days * 24 * 60 * 60 * 1000);
 
-  // If rule has no folders selected, default to Inbox so "Run now" does something useful
-  const folderIdsToProcess =
-    rule.folder_ids.length > 0
-      ? rule.folder_ids
-      : (() => {
-          const inbox = folders.find((f) => f.displayName.toLowerCase() === "inbox");
-          return inbox ? [inbox.id] : [];
-        })();
+  const { folderIds: folderIdsToProcess, staleFolderIds } = resolveFolderIds(
+    rule.folder_ids,
+    folders
+  );
 
   if (folderIdsToProcess.length === 0) {
     return {
@@ -117,9 +137,20 @@ export async function runArchiveOnce(
       totalArchived: 0,
       totalFailed: 0,
       storageUsed,
-      firstError: undefined,
+      firstError:
+        staleFolderIds.length > 0
+          ? "Saved mail folders are no longer valid. Reconnect Microsoft and re-select folders for this rule."
+          : undefined,
+      staleFolderIds: staleFolderIds.length > 0 ? staleFolderIds : undefined,
       safetyMode: rule.safety_mode,
     };
+  }
+
+  if (staleFolderIds.length > 0) {
+    await db.query(
+      "UPDATE mailarchive_rules SET folder_ids = $1 WHERE id = $2 AND user_id = $3",
+      [JSON.stringify(folderIdsToProcess), ruleId, userId]
+    );
   }
 
   let totalConsidered = 0;
@@ -144,21 +175,14 @@ export async function runArchiveOnce(
         cutoff
       );
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      const isPatternError =
-        /expected pattern|did not match|string did not match/i.test(errMsg);
-      if (isPatternError) {
-        // Graph sometimes rejects $filter datetime; retry without filter and filter in memory
-        try {
-          messages = await listMessages(client, tokenData.accountId, folderId, maxMessages * 2);
-        } catch (retryErr) {
-          // eslint-disable-next-line no-console
-          console.error("[archive] Failed to list messages for folder (retry without filter)", folderId, retryErr);
-          continue;
-        }
-      } else {
+      // Graph sometimes rejects $filter; retry without server filter and apply cutoff in memory.
+      try {
+        messages = await listMessages(client, tokenData.accountId, folderId, maxMessages * 2);
+      } catch (retryErr) {
+        const errMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        if (!firstError) firstError = errMsg;
         // eslint-disable-next-line no-console
-        console.error("[archive] Failed to list messages for folder", folderId, err);
+        console.error("[archive] Failed to list messages for folder", folderId, retryErr);
         continue;
       }
     }
@@ -238,8 +262,14 @@ export async function runArchiveOnce(
 
         totalArchived += 1;
       } catch (err) {
-        totalFailed += 1;
         const errMsg = err instanceof Error ? err.message : String(err);
+        const alreadyGone =
+          /not found in the store|errorinvalidid|itemnotfound|mailboxitemnotfound/i.test(errMsg);
+        if (alreadyGone) {
+          // Message was already archived/moved in a prior run; skip without counting as failed.
+          continue;
+        }
+        totalFailed += 1;
         if (!firstError) firstError = errMsg;
         // eslint-disable-next-line no-console
         console.error("[archive] Failed to archive message", msg.id, errMsg);
@@ -257,6 +287,7 @@ export async function runArchiveOnce(
     totalFailed,
     storageUsed,
     firstError,
+    staleFolderIds: staleFolderIds.length > 0 ? staleFolderIds : undefined,
     safetyMode: rule.safety_mode,
   };
 }

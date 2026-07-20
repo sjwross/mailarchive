@@ -265,6 +265,7 @@ If you continue to see `invalid_request` after verifying the above, the next ste
    - **Repo on external volume (e.g. HubSSD):** macOS cron often cannot run scripts on external volumes. Use the **wrapper** on your main disk:
      - Copy `scripts/run-scheduled-cron-wrapper.sh` to e.g. `~/bin/mailarchive-run-scheduled.sh`, make it executable.
      - Create `~/.mailarchive-cron.env` with `CRON_SECRET=<same value as in project .env>` and optionally `MAILARCHIVE_API_URL=http://localhost:3000`.
+     - Optional ntfy: set `NTFY_TOPIC=<private-topic>` (and optionally `NTFY_URL`, `NTFY_TOKEN`). The wrapper pushes on failure and, by default, on success with the archived email count (`NTFY_ON_SUCCESS=0` to skip success). Subscribe to that topic in the ntfy app.
      - In crontab: `0 3 * * * $HOME/bin/mailarchive-run-scheduled.sh >> /tmp/mailarchive-cron.log 2>&1`
    - **Repo on main disk:** You can use `scripts/run-scheduled-cron.sh` directly in crontab (it reads `CRON_SECRET` from the repo `.env`).
 
@@ -273,10 +274,17 @@ If you continue to see `invalid_request` after verifying the above, the next ste
      ```bash
      cat /tmp/mailarchive-cron.log
      ```
-   - Look for "Calling …/api/jobs/run-scheduled" and "HTTP 200". If you see "HTTP 401", the secret in `~/.mailarchive-cron.env` does not match the API's `CRON_SECRET`. If you see "curl failed" or no log, cron may not be running the script (path, permissions) or the API was not reachable.
+   - Look for "Calling …/api/jobs/run-scheduled" and "HTTP 200". If you see "HTTP 401", the secret in `~/.mailarchive-cron.env` does not match the API's `CRON_SECRET`. If you see "curl failed" or no log, cron may not be running the script (path, permissions) or the API was not reachable. If `NTFY_TOPIC` is set, failures also appear as an ntfy push.
+   - **`curl failed (rc=28)` / HTTP 000 while the API is healthy:** the job likely ran longer than curl’s wait. Rules with a high **max per run** (e.g. 500) often need more than 10 minutes. The wrapper defaults to a **3600s** limit (`MAILARCHIVE_CRON_TIMEOUT_SEC` to override). Re-copy the wrapper to `~/bin/` after updating the repo script. Check `last_run_at` on the rule — if it updated around the cron window, the archive may have succeeded after cron gave up.
 
 5. **API must be running when cron fires**
-   - The scheduled job is a **HTTP call** into the API. If the API is not running at 3:00 AM (or whenever cron runs), the request will fail. Options: run the API in a persistent terminal, use a process manager (e.g. `pm2`), or run it as a system service so it is always up when cron runs.
+   - The scheduled job is a **HTTP call** into the API. If the API is not running at 3:00 AM (or whenever cron runs), the request will fail.
+   - **Recommended (macOS):** install LaunchAgents so the API (and worker) stay up and restart on crash:
+     ```bash
+     ./scripts/install-launchd.sh
+     ```
+     Confirm with `curl -sS http://127.0.0.1:3000/api/health` and `launchctl print gui/$(id -u)/com.mailarchive.api` (and `…/com.mailarchive.worker`). Logs: `/tmp/mailarchive-api.log`, `/tmp/mailarchive-worker.log`.
+   - Other options: keep `npm run dev:api` in a persistent terminal, or use a process manager (e.g. `pm2`). Do not run `dev:api` / `dev:worker` and the LaunchAgents at the same time.
 
 ---
 

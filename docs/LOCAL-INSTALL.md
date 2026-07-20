@@ -69,6 +69,43 @@ npm run dev:web     # terminal 3 (optional)
 - API: http://localhost:3000  
 - Web (Vite): http://localhost:5173  
 
+## 7. Keep the API and worker running overnight (launchd)
+
+The 3 AM cron job calls `http://localhost:3000`. A terminal `npm run dev:api` / `dev:worker` can die overnight. Install LaunchAgents instead:
+
+```bash
+./scripts/install-launchd.sh
+```
+
+Or individually:
+
+```bash
+./scripts/install-launchd-api.sh
+./scripts/install-launchd-worker.sh
+```
+
+That builds each package, loads `com.mailarchive.api` and `com.mailarchive.worker` so they start at login and restart if they exit.
+
+| Service | Logs |
+|---------|------|
+| API | `/tmp/mailarchive-api.log`, `/tmp/mailarchive-api.err` |
+| Worker | `/tmp/mailarchive-worker.log`, `/tmp/mailarchive-worker.err` |
+
+After code changes:
+
+```bash
+npm run build -w api && launchctl kickstart -k gui/$(id -u)/com.mailarchive.api
+npm run build -w worker && launchctl kickstart -k gui/$(id -u)/com.mailarchive.worker
+```
+
+Uninstall:
+
+```bash
+./scripts/install-launchd.sh --uninstall
+```
+
+Do **not** also leave `npm run dev:api` or `npm run dev:worker` running alongside the agents.
+
 ## Useful commands
 
 | Command | Description |

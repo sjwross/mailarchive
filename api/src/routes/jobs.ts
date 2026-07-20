@@ -33,6 +33,9 @@ export async function jobsRoutes(app: FastifyInstance) {
       userId: string;
       schedule: string;
       ran: boolean;
+      totalArchived?: number;
+      totalFailed?: number;
+      totalMessagesConsidered?: number;
       error?: string;
     }[] = [];
 
@@ -59,13 +62,16 @@ export async function jobsRoutes(app: FastifyInstance) {
       );
 
       try {
-        await runArchiveOnce(rule.user_id, rule.id, maxMessages);
+        const result = await runArchiveOnce(rule.user_id, rule.id, maxMessages);
         await db.query("UPDATE mailarchive_rules SET last_run_at = NOW() WHERE id = $1", [rule.id]);
         summaries.push({
           ruleId: rule.id,
           userId: rule.user_id,
           schedule: rule.schedule,
           ran: true,
+          totalArchived: result.totalArchived,
+          totalFailed: result.totalFailed,
+          totalMessagesConsidered: result.totalMessagesConsidered,
         });
       } catch (err: unknown) {
         const e = err as { message?: string };
@@ -79,7 +85,9 @@ export async function jobsRoutes(app: FastifyInstance) {
       }
     }
 
-    return reply.send({ ok: true, summaries });
+    const totalArchived = summaries.reduce((sum, s) => sum + (s.totalArchived ?? 0), 0);
+    const totalFailed = summaries.reduce((sum, s) => sum + (s.totalFailed ?? 0), 0);
+    return reply.send({ ok: true, totalArchived, totalFailed, summaries });
   });
 
   app.post("/run-junk-delete", async (request, reply) => {

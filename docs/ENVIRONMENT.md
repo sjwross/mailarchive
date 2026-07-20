@@ -153,6 +153,26 @@ Shared secret used by cron to authenticate. Set in `.env`; the script `scripts/r
 CRON_SECRET=your-strong-cron-secret
 ```
 
+#### ntfy (optional)
+
+Push notifications for archive runs. Use the same topic in both places if you want one phone subscription:
+
+| Where | Used by |
+|--------|---------|
+| Project `.env` (`NTFY_TOPIC`, …) | API — **manual Run Now** from the UI |
+| `~/.mailarchive-cron.env` | Cron wrapper — **scheduled** nightly job |
+
+```bash
+NTFY_TOPIC=your-private-topic
+# NTFY_URL=https://ntfy.sh
+# NTFY_TOKEN=           # if the topic requires auth
+# NTFY_ON_SUCCESS=0     # success pushes are on by default; set 0 to skip
+```
+
+On success the message includes how many emails were archived (and storage used for manual runs). Failures still always notify when `NTFY_TOPIC` is set.
+
+Restart the API after changing project `.env` so it picks up new ntfy settings.
+
 For full setup (script, crontab, log path), see the **Cron (scheduled archive)** section in [README.md](../README.md).
 
 

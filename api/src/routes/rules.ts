@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { db } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import { runArchiveOnce } from "../lib/archive.js";
+import { notifyArchiveFailure, notifyArchiveSuccess } from "../lib/ntfy.js";
 
 const SAFETY_MODES = ["archive_only", "archive_move", "archive_delete"] as const;
 const SCHEDULES = ["manual", "daily", "weekly"] as const;
@@ -43,13 +44,21 @@ export async function rulesRoutes(app: FastifyInstance) {
 
     try {
       const summary = await runArchiveOnce(userId, ruleId, maxMessages);
+      await notifyArchiveSuccess({
+        totalArchived: summary.totalArchived,
+        totalFailed: summary.totalFailed,
+        storageUsed: summary.storageUsed,
+        source: "manual",
+      });
       return reply.send({
         ok: true,
         summary,
       });
     } catch (err: unknown) {
       const e = err as { message?: string };
-      return reply.status(400).send({ ok: false, error: e.message || "Failed to run archive" });
+      const message = e.message || "Failed to run archive";
+      await notifyArchiveFailure(message, "manual");
+      return reply.status(400).send({ ok: false, error: message });
     }
   });
 
