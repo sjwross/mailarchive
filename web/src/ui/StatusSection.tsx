@@ -20,10 +20,12 @@ type StorageStatus = {
 type DriveStatus = {
   connected: boolean;
   email?: string | null;
+  baseFolderName?: string;
 };
 
 type OneDriveStatus = {
   configured: boolean;
+  basePath?: string;
   note?: string;
 };
 
@@ -33,11 +35,25 @@ export function StatusSection({ token, onUnauthorized }: Props) {
   const [driveStatus, setDriveStatus] = useState<DriveStatus | null>(null);
   const [oneDriveStatus, setOneDriveStatus] = useState<OneDriveStatus | null>(null);
   const [preferredArchive, setPreferredArchive] = useState<string | null>(null);
+  const [s3FolderDraft, setS3FolderDraft] = useState("");
+  const [driveFolderDraft, setDriveFolderDraft] = useState("mailarchive");
+  const [oneDriveFolderDraft, setOneDriveFolderDraft] = useState("mailarchive");
+  const [savingFolder, setSavingFolder] = useState<"s3" | "gdrive" | "onedrive" | null>(null);
+  const [folderSaved, setFolderSaved] = useState<"s3" | "gdrive" | "onedrive" | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function parseJson(res: Response): Promise<Record<string, unknown>> {
     return res.json().catch(() => ({}));
+  }
+
+  function errorMessage(data: Record<string, unknown>, fallback: string): string {
+    const msg = typeof data.message === "string" ? data.message : "";
+    const err = typeof data.error === "string" ? data.error : "";
+    // Fastify 404s use error: "Not Found" with the useful detail in message
+    if (err && err !== "Not Found") return err;
+    if (msg) return msg;
+    return err || fallback;
   }
 
   function checkUnauthorized(res: Response): boolean {
@@ -88,6 +104,15 @@ export function StatusSection({ token, onUnauthorized }: Props) {
       setStorageStatus(s3Res?.ok ? (s3Json ?? null) : { configured: false });
       setDriveStatus(gdRes?.ok ? (gdJson ?? null) : { connected: false });
       setOneDriveStatus(odRes?.ok ? (odJson ?? null) : { configured: false });
+      if (s3Res?.ok && s3Json?.configured) {
+        setS3FolderDraft(s3Json.basePath ?? "");
+      }
+      if (gdRes?.ok && gdJson?.connected) {
+        setDriveFolderDraft(gdJson.baseFolderName || "mailarchive");
+      }
+      if (odRes?.ok && odJson?.configured) {
+        setOneDriveFolderDraft(odJson.basePath || "mailarchive");
+      }
       if (!msRes?.ok || !s3Res?.ok || !gdRes?.ok || !odRes?.ok) {
         setError("Some status checks failed. Use Refresh status to retry.");
       }
@@ -124,7 +149,7 @@ export function StatusSection({ token, onUnauthorized }: Props) {
       const data = await parseJson(res);
       if (checkUnauthorized(res)) return;
       if (!res.ok) {
-        throw new Error((data.error as string) || `Failed to start Microsoft connect (${res.status})`);
+        throw new Error(errorMessage(data, `Failed to start Microsoft connect (${res.status})`));
       }
       const authUrl = data.authUrl as string;
       if (!authUrl) {
@@ -160,7 +185,7 @@ export function StatusSection({ token, onUnauthorized }: Props) {
       const data = await parseJson(res);
       if (checkUnauthorized(res)) return;
       if (!res.ok || !(data.authUrl as string)) {
-        throw new Error((data.error as string) || "Failed to start Google Drive connect");
+        throw new Error(errorMessage(data, "Failed to start Google Drive connect"));
       }
       window.open(data.authUrl as string, "_blank", "noopener,noreferrer");
     } catch (err) {
@@ -183,7 +208,7 @@ export function StatusSection({ token, onUnauthorized }: Props) {
       if (checkUnauthorized(res)) return;
       if (!res.ok) {
         const data = await parseJson(res);
-        throw new Error((data.error as string) || "Failed to disconnect");
+        throw new Error(errorMessage(data, "Failed to disconnect"));
       }
       void refresh();
     } catch (err) {
@@ -204,7 +229,7 @@ export function StatusSection({ token, onUnauthorized }: Props) {
       if (checkUnauthorized(res)) return;
       if (!res.ok) {
         const data = await parseJson(res);
-        throw new Error((data.error as string) || "Failed to disconnect");
+        throw new Error(errorMessage(data, "Failed to disconnect"));
       }
       void refresh();
     } catch (err) {
@@ -225,13 +250,135 @@ export function StatusSection({ token, onUnauthorized }: Props) {
       if (checkUnauthorized(res)) return;
       if (!res.ok) {
         const data = await parseJson(res);
-        throw new Error((data.error as string) || "Failed to disconnect");
+        throw new Error(errorMessage(data, "Failed to disconnect"));
       }
       void refresh();
     } catch (err) {
       const e = err as { message?: string };
       setError(e.message || "Failed to disconnect Google Drive");
     }
+  }
+
+  async function saveS3Folder() {
+    if (!token?.trim() || !storageStatus?.configured) return;
+    setSavingFolder("s3");
+    setFolderSaved(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/storage/s3", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ basePath: s3FolderDraft.trim() }),
+      });
+      const data = await parseJson(res);
+      if (checkUnauthorized(res)) return;
+      if (!res.ok) {
+        throw new Error(errorMessage(data, "Failed to save S3 folder"));
+      }
+      const nextPath = (data.basePath as string) ?? s3FolderDraft.trim();
+      setS3FolderDraft(nextPath);
+      setStorageStatus((prev) => (prev ? { ...prev, basePath: nextPath } : prev));
+      setFolderSaved("s3");
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e.message || "Failed to save S3 folder");
+    } finally {
+      setSavingFolder(null);
+    }
+  }
+
+  async function saveDriveFolder() {
+    if (!token?.trim() || !driveStatus?.connected) return;
+    setSavingFolder("gdrive");
+    setFolderSaved(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/gdrive/folder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ baseFolderName: driveFolderDraft.trim() || "mailarchive" }),
+      });
+      const data = await parseJson(res);
+      if (checkUnauthorized(res)) return;
+      if (!res.ok) {
+        throw new Error(errorMessage(data, "Failed to save Google Drive folder"));
+      }
+      const nextName = (data.baseFolderName as string) || "mailarchive";
+      setDriveFolderDraft(nextName);
+      setDriveStatus((prev) => (prev ? { ...prev, baseFolderName: nextName } : prev));
+      setFolderSaved("gdrive");
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e.message || "Failed to save Google Drive folder");
+    } finally {
+      setSavingFolder(null);
+    }
+  }
+
+  async function saveOneDriveFolder() {
+    if (!token?.trim() || !oneDriveStatus?.configured) return;
+    setSavingFolder("onedrive");
+    setFolderSaved(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/storage/onedrive", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ basePath: oneDriveFolderDraft.trim() || "mailarchive" }),
+      });
+      const data = await parseJson(res);
+      if (checkUnauthorized(res)) return;
+      if (!res.ok) {
+        throw new Error(errorMessage(data, "Failed to save OneDrive folder"));
+      }
+      const nextPath = (data.basePath as string) || "mailarchive";
+      setOneDriveFolderDraft(nextPath);
+      setOneDriveStatus((prev) => (prev ? { ...prev, basePath: nextPath } : prev));
+      setFolderSaved("onedrive");
+    } catch (err) {
+      const e = err as { message?: string };
+      setError(e.message || "Failed to save OneDrive folder");
+    } finally {
+      setSavingFolder(null);
+    }
+  }
+
+  function folderEditor(opts: {
+    id: "s3" | "gdrive" | "onedrive";
+    value: string;
+    onChange: (v: string) => void;
+    onSave: () => void;
+    hint: string;
+    placeholder: string;
+  }) {
+    const busy = savingFolder === opts.id;
+    return (
+      <div className="folder-path-editor" style={{ marginTop: 10 }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.9rem" }}>
+          Mailarchive folder
+          <span className="subtitle" style={{ margin: 0, fontSize: "0.8rem" }}>
+            {opts.hint}
+          </span>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <input
+              value={opts.value}
+              onChange={(e) => opts.onChange(e.target.value)}
+              placeholder={opts.placeholder}
+              disabled={loading || busy}
+              style={{ minWidth: 180, flex: "1 1 160px" }}
+            />
+            <button type="button" onClick={opts.onSave} disabled={loading || busy}>
+              {busy ? "Saving…" : "Save"}
+            </button>
+            {folderSaved === opts.id && (
+              <span className="subtitle" style={{ margin: 0, fontSize: "0.85rem" }}>
+                Saved
+              </span>
+            )}
+          </span>
+        </label>
+      </div>
+    );
   }
 
   return (
@@ -261,8 +408,7 @@ export function StatusSection({ token, onUnauthorized }: Props) {
         {storageStatus ? (
           storageStatus.configured ? (
             <p>
-              <strong>Configured</strong> — {storageStatus.bucket} ({storageStatus.region}){" "}
-              {storageStatus.basePath && <>@ {storageStatus.basePath}</>}
+              <strong>Configured</strong> — {storageStatus.bucket} ({storageStatus.region})
             </p>
           ) : (
             <p>
@@ -272,6 +418,15 @@ export function StatusSection({ token, onUnauthorized }: Props) {
         ) : (
           <p>Loading…</p>
         )}
+        {storageStatus?.configured &&
+          folderEditor({
+            id: "s3",
+            value: s3FolderDraft,
+            onChange: setS3FolderDraft,
+            onSave: () => void saveS3Folder(),
+            hint: "Optional key prefix for archived mail (e.g. mailarchive/). Leave blank for bucket root. Applies to new archives only.",
+            placeholder: "mailarchive/",
+          })}
         {storageStatus?.configured && (
           <button type="button" className="link-button button-remove" onClick={disconnectS3} disabled={loading} style={{ marginTop: 8 }}>
             Remove S3
@@ -301,6 +456,15 @@ export function StatusSection({ token, onUnauthorized }: Props) {
             Disconnect
           </button>
         )}
+        {driveStatus?.connected &&
+          folderEditor({
+            id: "gdrive",
+            value: driveFolderDraft,
+            onChange: setDriveFolderDraft,
+            onSave: () => void saveDriveFolder(),
+            hint: "Top-level Drive folder for archives. Changing this creates/uses a new folder; existing archives stay in the old one.",
+            placeholder: "mailarchive",
+          })}
       </div>
 
       <div>
@@ -318,6 +482,15 @@ export function StatusSection({ token, onUnauthorized }: Props) {
         <p className="subtitle" style={{ marginTop: 4, fontSize: "0.9rem" }}>
           Uses your Microsoft account. Archive uses OneDrive when S3 and Google Drive are not configured. Reconnect Microsoft if you connected before OneDrive was added to grant file access.
         </p>
+        {oneDriveStatus?.configured &&
+          folderEditor({
+            id: "onedrive",
+            value: oneDriveFolderDraft,
+            onChange: setOneDriveFolderDraft,
+            onSave: () => void saveOneDriveFolder(),
+            hint: "Root folder path for archives (e.g. mailarchive or backups/mailarchive). Applies to new archives only.",
+            placeholder: "mailarchive",
+          })}
       </div>
 
       <div>
@@ -367,4 +540,3 @@ export function StatusSection({ token, onUnauthorized }: Props) {
     </div>
   );
 }
-

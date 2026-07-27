@@ -9,6 +9,8 @@ interface TokenData {
   expiresAt: number;
   accountId: string;
   email: string;
+  /** OneDrive archive root folder path (default: mailarchive). */
+  onedriveBasePath?: string;
 }
 
 import type { Client } from "@microsoft/microsoft-graph-client";

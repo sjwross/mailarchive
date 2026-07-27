@@ -12,6 +12,9 @@ import {
   listArchiveChildren,
   downloadArchiveFile,
   parseEmlHeaders,
+  getDriveBaseFolderName,
+  updateDriveBaseFolderName,
+  normalizeDriveFolderName,
 } from "../lib/google-drive.js";
 import { google } from "googleapis";
 
@@ -87,6 +90,23 @@ export async function gdriveRoutes(app: FastifyInstance) {
 
       const tokens = await exchangeCodeForTokens(code);
 
+      // Preserve Drive archive folder name across reconnect.
+      let baseFolderName: string | undefined;
+      const existing = await db.query(
+        "SELECT config_encrypted FROM mailarchive_connections WHERE user_id = $1 AND provider = $2 ORDER BY created_at DESC LIMIT 1",
+        [userId, "gdrive"]
+      );
+      if (existing.rows.length > 0) {
+        try {
+          const prev = JSON.parse(decrypt(existing.rows[0].config_encrypted)) as {
+            baseFolderName?: string;
+          };
+          if (prev.baseFolderName) baseFolderName = prev.baseFolderName;
+        } catch {
+          // ignore; reconnect still succeeds
+        }
+      }
+
       // Get user email from Google OAuth2 API
       const oauth2 = getOAuthClient();
       oauth2.setCredentials({
@@ -98,10 +118,19 @@ export async function gdriveRoutes(app: FastifyInstance) {
       const userInfo = await oauth2Client.userinfo.get();
       const email = userInfo.data.email || null;
 
-      const configWithEmail = { ...tokens, email };
+      const configWithEmail = {
+        ...tokens,
+        email,
+        ...(baseFolderName ? { baseFolderName } : {}),
+      };
       const encrypted = encrypt(JSON.stringify(configWithEmail));
       const connectionId = nanoid(22);
 
+      // Replace any prior Drive connection so reconnect cannot leave stale tokens behind.
+      await db.query("DELETE FROM mailarchive_connections WHERE user_id = $1 AND provider = $2", [
+        userId,
+        "gdrive",
+      ]);
       await db.query(
         "INSERT INTO mailarchive_connections (id, user_id, provider, config_encrypted) VALUES ($1, $2, $3, $4)",
         [connectionId, userId, "gdrive", encrypted]
@@ -149,6 +178,29 @@ export async function gdriveRoutes(app: FastifyInstance) {
     return reply.send({
       connected: true,
       email: conn.config.email || null,
+      baseFolderName: getDriveBaseFolderName(conn.config),
+    });
+  });
+
+  app.patch<{ Body: { baseFolderName?: string } }>("/folder", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return;
+    if (request.body?.baseFolderName === undefined) {
+      return reply.status(400).send({ error: "baseFolderName is required" });
+    }
+    try {
+      normalizeDriveFolderName(request.body.baseFolderName);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return reply.status(400).send({ error: e.message || "Invalid baseFolderName" });
+    }
+    const updated = await updateDriveBaseFolderName(userId, request.body.baseFolderName);
+    if (!updated) {
+      return reply.status(404).send({ error: "Google Drive not connected" });
+    }
+    return reply.send({
+      connected: true,
+      baseFolderName: getDriveBaseFolderName(updated),
     });
   });
 

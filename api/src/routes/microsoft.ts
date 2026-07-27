@@ -89,17 +89,40 @@ export async function microsoftRoutes(app: FastifyInstance) {
       const graphClient = createGraphClient(tokenResponse.accessToken);
       const me = await getMe(graphClient);
 
+      // Preserve OneDrive archive folder path across reconnect.
+      let onedriveBasePath: string | undefined;
+      const existing = await db.query(
+        "SELECT config_encrypted FROM mailarchive_connections WHERE user_id = $1 AND provider = $2 ORDER BY created_at DESC LIMIT 1",
+        [userId, "microsoft"]
+      );
+      if (existing.rows.length > 0) {
+        try {
+          const prev = JSON.parse(decrypt(existing.rows[0].config_encrypted)) as {
+            onedriveBasePath?: string;
+          };
+          if (prev.onedriveBasePath) onedriveBasePath = prev.onedriveBasePath;
+        } catch {
+          // ignore decrypt/parse errors; reconnect still succeeds
+        }
+      }
+
       const tokenData = {
         accessToken: tokenResponse.accessToken,
         refreshToken: refreshToken || "",
         expiresAt: tokenResponse.expiresOn?.getTime() || Date.now() + 3600000,
         accountId: me.id,
         email: me.mail,
+        ...(onedriveBasePath ? { onedriveBasePath } : {}),
       };
 
       const encrypted = encrypt(JSON.stringify(tokenData));
       const connectionId = nanoid(22);
 
+      // Replace any prior Microsoft connection so reconnect cannot leave stale tokens behind.
+      await db.query("DELETE FROM mailarchive_connections WHERE user_id = $1 AND provider = $2", [
+        userId,
+        "microsoft",
+      ]);
       await db.query(
         "INSERT INTO mailarchive_connections (id, user_id, provider, config_encrypted) VALUES ($1, $2, $3, $4)",
         [connectionId, userId, "microsoft", encrypted]

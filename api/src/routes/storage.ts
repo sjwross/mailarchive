@@ -3,8 +3,12 @@ import { nanoid } from "nanoid";
 import { db } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import { encrypt } from "../lib/encryption.js";
-import { getUserS3Config, uploadEml, buildObjectKey } from "../lib/s3.js";
-import { getOneDriveForUser } from "../lib/onedrive.js";
+import { getUserS3Config, uploadEml, buildObjectKey, type S3Config } from "../lib/s3.js";
+import {
+  getOneDriveForUser,
+  updateOneDriveBasePath,
+  normalizeOneDriveBasePath,
+} from "../lib/onedrive.js";
 
 type S3Body = {
   endpoint?: string;
@@ -12,6 +16,14 @@ type S3Body = {
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
+  basePath?: string;
+};
+
+type S3PatchBody = {
+  basePath?: string;
+};
+
+type OneDrivePatchBody = {
   basePath?: string;
 };
 
@@ -88,6 +100,33 @@ export async function storageRoutes(app: FastifyInstance) {
     });
   });
 
+  app.patch<{ Body: S3PatchBody }>("/s3", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return;
+    const config = await getUserS3Config(userId);
+    if (!config) {
+      return reply.status(404).send({ error: "S3 storage not configured" });
+    }
+    if (request.body?.basePath === undefined) {
+      return reply.status(400).send({ error: "basePath is required" });
+    }
+    const updated: S3Config = {
+      ...config,
+      basePath: String(request.body.basePath).trim(),
+    };
+    const encrypted = encrypt(JSON.stringify(updated));
+    await db.query(
+      "UPDATE mailarchive_connections SET config_encrypted = $1 WHERE user_id = $2 AND provider = $3",
+      [encrypted, userId, "s3"]
+    );
+    return reply.send({
+      configured: true,
+      region: updated.region,
+      bucket: updated.bucket,
+      basePath: updated.basePath ?? "",
+    });
+  });
+
   app.get("/onedrive", async (request, reply) => {
     const userId = (request as { userId?: string }).userId;
     if (!userId) return;
@@ -95,7 +134,30 @@ export async function storageRoutes(app: FastifyInstance) {
     if (!oneDrive) {
       return reply.send({ configured: false });
     }
-    return reply.send({ configured: true, note: "Uses your Microsoft account" });
+    return reply.send({
+      configured: true,
+      basePath: oneDrive.basePath,
+      note: "Uses your Microsoft account",
+    });
+  });
+
+  app.patch<{ Body: OneDrivePatchBody }>("/onedrive", async (request, reply) => {
+    const userId = (request as { userId?: string }).userId;
+    if (!userId) return;
+    if (request.body?.basePath === undefined) {
+      return reply.status(400).send({ error: "basePath is required" });
+    }
+    try {
+      normalizeOneDriveBasePath(request.body.basePath);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      return reply.status(400).send({ error: e.message || "Invalid basePath" });
+    }
+    const basePath = await updateOneDriveBasePath(userId, request.body.basePath);
+    if (basePath === null) {
+      return reply.status(404).send({ error: "Microsoft account not connected" });
+    }
+    return reply.send({ configured: true, basePath });
   });
 
   app.post("/s3/test", async (request, reply) => {
@@ -128,4 +190,3 @@ export async function storageRoutes(app: FastifyInstance) {
     }
   });
 }
-

@@ -8,14 +8,59 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000/api/gdrive/callback";
 
-const BASE_FOLDER_NAME = "mailarchive";
+const DEFAULT_BASE_FOLDER_NAME = "mailarchive";
 
 export interface DriveConfig {
   accessToken: string;
   refreshToken: string;
   expiryDate: number;
+  /** Top-level Drive folder name for archives (default: mailarchive). */
+  baseFolderName?: string;
   rootFolderId?: string;
   email?: string;
+}
+
+export function getDriveBaseFolderName(config: DriveConfig): string {
+  const name = (config.baseFolderName ?? DEFAULT_BASE_FOLDER_NAME).trim();
+  return name || DEFAULT_BASE_FOLDER_NAME;
+}
+
+/** Validate a single Drive folder name (no path separators). */
+export function normalizeDriveFolderName(raw: string | undefined | null): string {
+  const name = (raw ?? "").trim();
+  if (!name) return DEFAULT_BASE_FOLDER_NAME;
+  if (name.includes("/") || name.includes("\\") || name === "." || name === "..") {
+    throw new Error("Folder name must be a single folder (no path separators)");
+  }
+  if (!/^[\w.\- ]+$/.test(name)) {
+    throw new Error("Folder name may only contain letters, numbers, spaces, dots, hyphens, and underscores");
+  }
+  return name;
+}
+
+export async function updateDriveBaseFolderName(
+  userId: string,
+  baseFolderName: string
+): Promise<DriveConfig | null> {
+  const conn = await getDriveForUser(userId);
+  if (!conn) return null;
+  const name = normalizeDriveFolderName(baseFolderName);
+  const current = getDriveBaseFolderName(conn.config);
+  if (name === current) {
+    return { ...conn.config, baseFolderName: name };
+  }
+  // Clear cached rootFolderId so the new folder name is resolved/created on next use.
+  const updated: DriveConfig = {
+    ...conn.config,
+    baseFolderName: name,
+    rootFolderId: undefined,
+  };
+  const encrypted = encrypt(JSON.stringify(updated));
+  await db.query(
+    "UPDATE mailarchive_connections SET config_encrypted = $1 WHERE user_id = $2 AND provider = $3",
+    [encrypted, userId, "gdrive"]
+  );
+  return updated;
 }
 
 export function getOAuthClient() {
@@ -140,7 +185,7 @@ export async function ensureDrivePath(
 ): Promise<string> {
   let rootId = config.rootFolderId;
   if (!rootId) {
-    rootId = await ensureFolder(drive, BASE_FOLDER_NAME);
+    rootId = await ensureFolder(drive, getDriveBaseFolderName(config));
     const updated: DriveConfig = { ...config, rootFolderId: rootId };
     const encrypted = encrypt(JSON.stringify(updated));
     await db.query(
@@ -192,7 +237,7 @@ export async function getArchiveRootFolderId(
 ): Promise<string> {
   let rootId = config.rootFolderId;
   if (!rootId) {
-    rootId = await ensureFolder(drive, BASE_FOLDER_NAME);
+    rootId = await ensureFolder(drive, getDriveBaseFolderName(config));
     const updated: DriveConfig = { ...config, rootFolderId: rootId };
     const encrypted = encrypt(JSON.stringify(updated));
     await db.query(

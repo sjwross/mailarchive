@@ -223,6 +223,7 @@ export async function runArchiveOnce(
             month,
             filename,
             mimeContent: mime,
+            basePath: oneDrive.basePath,
           });
         } else if (storageUsed === "gdrive" && drive) {
           const year = received.getUTCFullYear();
