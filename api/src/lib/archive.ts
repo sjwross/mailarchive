@@ -223,6 +223,7 @@ export async function runArchiveOnce(
             month,
             filename,
             mimeContent: mime,
+            receivedAt: received,
             basePath: oneDrive.basePath,
           });
         } else if (storageUsed === "gdrive" && drive) {
@@ -242,6 +243,7 @@ export async function runArchiveOnce(
             folderId,
             filename,
             mimeContent: mime,
+            receivedAt: received,
           });
         }
 

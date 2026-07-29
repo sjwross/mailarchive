@@ -208,14 +208,18 @@ export async function uploadEmlToDrive(params: {
   folderId: string;
   filename: string;
   mimeContent: string;
+  receivedAt: Date;
 }): Promise<string> {
-  const { drive, folderId, filename, mimeContent } = params;
+  const { drive, folderId, filename, mimeContent, receivedAt } = params;
+  const iso = receivedAt.toISOString();
   // googleapis multipartUpload expects body to have .pipe() (a Readable stream), not a Buffer
   const body = Readable.from(Buffer.from(mimeContent, "utf8"));
   const res = await drive.files.create({
     requestBody: {
       name: filename,
       parents: [folderId],
+      createdTime: iso,
+      modifiedTime: iso,
     },
     media: {
       mimeType: "message/rfc822",

@@ -117,15 +117,27 @@ If you use the provided `apache-mailarchive.conf` from the repo and include it f
   Status: Connected (you@example.com)
   ```
 
-**Storage layout in Google Drive**
+**Storage layout in Google Drive / OneDrive**
 
-Archived emails are written under:
+Archived emails are written under (root folder name is configurable per connection; default `mailarchive`):
 
 ```text
-mailarchive/{userId}/{Outlook-folder-name}/{year}/{month}/{subjectHash}.eml
+{basePath}/{userId}/{Outlook-folder-name}/{year}/{month}/{subjectHash}.eml
 ```
 
-The `{Outlook-folder-name}` is taken from the source folder’s display name (e.g. `Inbox`, `Sent Items`). There is currently no UI option to override this; the automatic structure is acceptable for v1.
+The `{Outlook-folder-name}` is taken from the source folder’s display name (e.g. `Inbox`, `Sent Items`). Year/month come from the message’s **received** date.
+
+**File timestamps on archive**
+
+On upload, mailarchive sets file timestamps from the email’s **received** date:
+
+| Storage | What you typically see |
+|--------|-------------------------|
+| **Google Drive** | Created and modified times are set to received date. |
+| **OneDrive (personal)** | **Date modified** (and OneDrive’s browser “Modified” column) shows received date. **Date created** stays as the upload/archive time (service-side Created cannot be overridden via Graph). |
+| **S3** | Object `LastModified` is upload time (provider limitation). |
+
+Already-archived files keep whatever timestamps they had when uploaded; only new archive runs get the received-date stamping.
 
 **Archive fails: "First error: Insufficient Permission"**
 

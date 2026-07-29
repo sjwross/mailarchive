@@ -1,4 +1,5 @@
 import type { Client } from "@microsoft/microsoft-graph-client";
+import "isomorphic-fetch";
 import { db } from "../db.js";
 import { encrypt, decrypt } from "./encryption.js";
 import { getMicrosoftToken } from "./microsoft-token.js";
@@ -82,6 +83,7 @@ function buildArchivePath(
 /**
  * Upload .eml content to OneDrive at path {basePath}/{userId}/{folderName}/{year}/{month}/{filename}.
  * Parent folders are created by Graph when using path-based upload.
+ * Sets fileSystemInfo created/modified to receivedAt (client facet; web UI Created may still show upload time).
  */
 export async function uploadEmlToOneDrive(params: {
   client: Client;
@@ -91,9 +93,10 @@ export async function uploadEmlToOneDrive(params: {
   month: string;
   filename: string;
   mimeContent: string;
+  receivedAt: Date;
   basePath?: string;
 }): Promise<string> {
-  const { client, userId, folderName, year, month, filename, mimeContent } = params;
+  const { client, userId, folderName, year, month, filename, mimeContent, receivedAt } = params;
   const folderPath = buildArchivePath(
     params.basePath ?? DEFAULT_BASE_PATH,
     userId,
@@ -101,10 +104,42 @@ export async function uploadEmlToOneDrive(params: {
     year,
     month
   );
-  // Path-based upload: PUT /me/drive/root:/path/to/file:/content
   const itemPath = `${folderPath}/${filename}`;
-  const apiPath = `/me/drive/root:/${itemPath}:/content`;
+  const iso = receivedAt.toISOString();
+  const body = Buffer.from(mimeContent, "utf8");
 
-  const response = await client.api(apiPath).put(mimeContent);
-  return response?.id ?? "";
+  // createUploadSession is required to set fileSystemInfo; simple PUT /content ignores timestamps.
+  const session = await client.api(`/me/drive/root:/${itemPath}:/createUploadSession`).post({
+    item: {
+      "@microsoft.graph.conflictBehavior": "replace",
+      fileSystemInfo: {
+        createdDateTime: iso,
+        lastModifiedDateTime: iso,
+      },
+    },
+  });
+
+  const uploadUrl = session?.uploadUrl as string | undefined;
+  if (!uploadUrl) {
+    throw new Error("OneDrive createUploadSession did not return uploadUrl");
+  }
+
+  const size = body.length;
+  const uploadRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Length": String(size),
+      ...(size > 0
+        ? { "Content-Range": `bytes 0-${size - 1}/${size}` }
+        : { "Content-Range": "bytes */0" }),
+    },
+    body,
+  });
+  if (!uploadRes.ok) {
+    const text = await uploadRes.text().catch(() => "");
+    throw new Error(`OneDrive upload failed: ${uploadRes.status} ${text}`.trim());
+  }
+
+  const result = (await uploadRes.json().catch(() => null)) as { id?: string } | null;
+  return result?.id ?? "";
 }
