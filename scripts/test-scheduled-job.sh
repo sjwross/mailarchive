@@ -21,7 +21,9 @@ API_URL="${MAILARCHIVE_API_URL:-http://localhost:3000}"
 echo "=== Test scheduled job ==="
 echo "POST $API_URL/api/jobs/run-scheduled"
 echo ""
-curl -s -m 30 -X POST "${API_URL}/api/jobs/run-scheduled" \
+# Archive runs with max_per_run=500 often take 10+ minutes; default curl -m 30 is too short.
+TIMEOUT_SEC="${MAILARCHIVE_CRON_TIMEOUT_SEC:-3600}"
+curl -s -m "$TIMEOUT_SEC" -X POST "${API_URL}/api/jobs/run-scheduled" \
   -H "X-Cron-Secret: $CRON_SECRET" \
   -H "Content-Type: application/json" \
   -d '{}' \

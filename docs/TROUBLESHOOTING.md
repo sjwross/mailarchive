@@ -289,7 +289,13 @@ If you continue to see `invalid_request` after verifying the above, the next ste
    - Look for "Calling …/api/jobs/run-scheduled" and "HTTP 200". If you see "HTTP 401", the secret in `~/.mailarchive-cron.env` does not match the API's `CRON_SECRET`. If you see "curl failed" or no log, cron may not be running the script (path, permissions) or the API was not reachable. If `NTFY_TOPIC` is set, failures also appear as an ntfy push.
    - **`curl failed (rc=28)` / HTTP 000 while the API is healthy:** the job likely ran longer than curl’s wait. Rules with a high **max per run** (e.g. 500) often need more than 10 minutes. The wrapper defaults to a **3600s** limit (`MAILARCHIVE_CRON_TIMEOUT_SEC` to override). Re-copy the wrapper to `~/bin/` after updating the repo script. Check `last_run_at` on the rule — if it updated around the cron window, the archive may have succeeded after cron gave up.
 
-5. **API must be running when cron fires**
+5. **Last run stuck / cron log shows `invalid_grant`**
+   - Cron may still be firing (HTTP 200) while the rule’s **Last run** stays old. Check `/tmp/mailarchive-cron.log` for `"ran":false,"error":"invalid_grant"`.
+   - That usually means a **stale Google Drive** refresh token was aborting archive setup before Auto could fall back to OneDrive/S3. Current code treats Drive refresh failure as disconnected and continues with other storage.
+   - After updating/restarting the API, run `npm run test:scheduled` (or wait for the next cron). Optionally reconnect Google Drive if you want Drive as a storage option again.
+   - The Connections red banner **“Some status checks failed”** is often the same Drive `invalid_grant` on `/api/gdrive/status`.
+
+6. **API must be running when cron fires**
    - The scheduled job is a **HTTP call** into the API. If the API is not running at 3:00 AM (or whenever cron runs), the request will fail.
    - **Recommended (macOS):** install LaunchAgents so the API (and worker) stay up and restart on crash:
      ```bash

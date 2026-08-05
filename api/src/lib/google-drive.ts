@@ -122,23 +122,35 @@ export async function getDriveForUser(
 
   // Refresh token if near expiry
   if (cfg.expiryDate && Date.now() >= cfg.expiryDate - 60_000) {
-    const { credentials } = await oauth2.refreshAccessToken();
-    cfg = {
-      ...cfg,
-      accessToken: credentials.access_token || cfg.accessToken,
-      refreshToken: credentials.refresh_token || cfg.refreshToken,
-      expiryDate: credentials.expiry_date || Date.now() + 3600_000,
-    };
-    const encrypted = encrypt(JSON.stringify(cfg));
-    await db.query(
-      "UPDATE mailarchive_connections SET config_encrypted = $1 WHERE user_id = $2 AND provider = $3",
-      [encrypted, userId, "gdrive"]
-    );
-    oauth2.setCredentials({
-      access_token: cfg.accessToken,
-      refresh_token: cfg.refreshToken,
-      expiry_date: cfg.expiryDate,
-    });
+    try {
+      const { credentials } = await oauth2.refreshAccessToken();
+      cfg = {
+        ...cfg,
+        accessToken: credentials.access_token || cfg.accessToken,
+        refreshToken: credentials.refresh_token || cfg.refreshToken,
+        expiryDate: credentials.expiry_date || Date.now() + 3600_000,
+      };
+      const encrypted = encrypt(JSON.stringify(cfg));
+      await db.query(
+        "UPDATE mailarchive_connections SET config_encrypted = $1 WHERE user_id = $2 AND provider = $3",
+        [encrypted, userId, "gdrive"]
+      );
+      oauth2.setCredentials({
+        access_token: cfg.accessToken,
+        refresh_token: cfg.refreshToken,
+        expiry_date: cfg.expiryDate,
+      });
+    } catch (err: unknown) {
+      // Revoked/expired refresh tokens throw (e.g. invalid_grant). Treat as disconnected
+      // so archive Auto can fall back to OneDrive/S3 instead of aborting the whole run.
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[gdrive] Token refresh failed for user ${userId}: ${message}`);
+      await db.query(
+        "DELETE FROM mailarchive_connections WHERE user_id = $1 AND provider = $2",
+        [userId, "gdrive"]
+      );
+      return null;
+    }
   }
 
   const drive = google.drive({ version: "v3", auth: oauth2 });
